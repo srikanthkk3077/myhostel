@@ -8,6 +8,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -18,12 +19,14 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { createNotice } from '../../../service/noticeService';
 
 export default function CreateNoticeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [type, setType] = useState('Normal');
+  const [submitting, setSubmitting] = useState(false);
 
   const types = [
     { name: 'Normal', icon: Bell, color: colors.primary },
@@ -31,8 +34,33 @@ export default function CreateNoticeScreen({ navigation }: any) {
     { name: 'Urgent', icon: AlertCircle, color: colors.danger },
   ];
 
-  const handlePublish = () => {
-    navigation.goBack();
+  const handlePublish = async () => {
+    if (!title.trim() || !message.trim()) {
+      Alert.alert('Error', 'Please fill in both title and message.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await createNotice({
+        title: title.trim(),
+        message: message.trim(),
+        type: type as any,
+        author: 'Admin', // Default to Admin as in mock mockup
+      });
+
+      if (response.status === 201 && response.data?.success) {
+        Alert.alert('Success', 'Announcement published successfully!');
+        navigation.goBack();
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to publish notice.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -105,9 +133,16 @@ export default function CreateNoticeScreen({ navigation }: any) {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.publishButton} activeOpacity={0.85} onPress={handlePublish}>
+          <TouchableOpacity 
+            style={[styles.publishButton, submitting && { backgroundColor: colors.textSecondary }]} 
+            activeOpacity={0.85} 
+            onPress={handlePublish}
+            disabled={submitting}
+          >
             <Send color="#FFFFFF" size={18} strokeWidth={2.5} />
-            <Text style={styles.publishButtonText}>Publish Notice</Text>
+            <Text style={styles.publishButtonText}>
+              {submitting ? 'Publishing...' : 'Publish Notice'}
+            </Text>
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />

@@ -12,6 +12,8 @@ import {
   Dimensions,
   Pressable,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Mail,
@@ -31,6 +33,8 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { registerUser } from '../../service/hostelServices';
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,6 +51,48 @@ export default function RegistrationScreen({ navigation }: any) {
   const [hostelName, setHostelName] = useState('');
   const [hostelAddress, setHostelAddress] = useState('');
   const [addressProof, setAddressProof] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleRegister = async () => {
+    if (!name || !email || !phone || !password) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+    if (accountType === 'merchant' && (!hostelName || !hostelAddress)) {
+      Alert.alert('Error', 'Hostel Name and Address are required for owners');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const payload = {
+        name,
+        email,
+        phone,
+        password,
+        accountType,
+        ...(accountType === 'merchant' && {
+          hostelName,
+          hostelAddress,
+          addressProof: addressProof || undefined,
+        })
+      };
+      
+      const response = await registerUser(payload);
+      
+      if (response.status === 201 && response.data?.success) {
+        Alert.alert('Success', 'Registration successful', [
+          { text: 'OK', onPress: () => navigation.replace('Login') }
+        ]);
+      } else {
+        Alert.alert('Registration Failed', response.data?.message || 'Something went wrong');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Something went wrong');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -184,10 +230,15 @@ export default function RegistrationScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Gradient Header Background */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[
             styles.blob,
@@ -202,8 +253,7 @@ export default function RegistrationScreen({ navigation }: any) {
             { transform: [{ translateY: blob2Y }] },
           ]}
         />
-        <View style={styles.glow} />
-      </View>
+      </LinearGradient>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -224,7 +274,7 @@ export default function RegistrationScreen({ navigation }: any) {
             <View style={styles.brandSection}>
               <View style={styles.logoWrapper}>
                 <View style={styles.logoInner}>
-                  <Building2 color="#FFFFFF" size={28} strokeWidth={2.5} />
+                  <Building2 color="#16A34A" size={28} strokeWidth={2.5} />
                 </View>
                 <View style={styles.sparkleBadge}>
                   <Sparkles color={colors.warning} size={14} strokeWidth={2.5} />
@@ -402,16 +452,22 @@ export default function RegistrationScreen({ navigation }: any) {
               <TouchableOpacity
                 style={[
                   styles.registerButton,
-                  !acceptTerms && styles.registerButtonDisabled,
+                  (!acceptTerms || isLoading) && styles.registerButtonDisabled,
                 ]}
                 activeOpacity={0.85}
-                disabled={!acceptTerms}
-                onPress={() => navigation.replace('Dashboard')}>
+                disabled={!acceptTerms || isLoading}
+                onPress={handleRegister}>
                 <View style={styles.buttonShine} />
-                <Text style={styles.registerButtonText}>Create Account</Text>
-                <View style={styles.buttonIconBox}>
-                  <ArrowRight color={colors.primary} size={18} strokeWidth={2.5} />
-                </View>
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Text style={styles.registerButtonText}>Create Account</Text>
+                    <View style={styles.buttonIconBox}>
+                      <ArrowRight color={colors.primary} size={18} strokeWidth={2.5} />
+                    </View>
+                  </>
+                )}
               </TouchableOpacity>
               
             </View>
@@ -448,44 +504,35 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: height * 0.38,
-    backgroundColor: colors.primary,
+    height: height * 0.40,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.25,
   },
   blob1: {
     width: 280,
     height: 280,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -100,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     bottom: -60,
     left: -60,
-    opacity: 0.2,
-  },
-  glow: {
-    position: 'absolute',
-    width: width,
-    height: 200,
-    bottom: 0,
-    backgroundColor: colors.primary,
-    opacity: 0.5,
   },
   keyboardView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: spacing.l,
+    // paddingHorizontal: 5,
     paddingTop: Platform.OS === 'ios' ? spacing.m : spacing.xl,
     paddingBottom: spacing.xl,
   },
@@ -501,11 +548,14 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   sparkleBadge: {
     position: 'absolute',
@@ -526,13 +576,13 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
     marginBottom: 4,
   },
   brandSubtitle: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
+    color: colors.textSecondary,
     fontWeight: '500',
     letterSpacing: 0.3,
   },

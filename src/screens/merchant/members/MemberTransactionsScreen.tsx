@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,29 +6,77 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {
   ArrowLeft,
   ArrowDownRight,
   ArrowUpRight,
   Download,
+  Receipt,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getMemberTransactions } from '../../../service/merchant';
+import { useFocusEffect } from '@react-navigation/native';
+
+interface Transaction {
+  id: string;
+  type: 'credit' | 'debit';
+  category: string;
+  amount: number;
+  date: string;
+  time: string;
+  ref: string;
+  paymentMethod: string;
+  remarks: string;
+  status: string;
+}
+
+interface Summary {
+  totalPaidYTD: number;
+  totalFines: number;
+}
 
 export default function MemberTransactionsScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  
-  // In a real app, member data would be passed via route params
-  const memberName = 'David Wilson';
+  const { memberId, memberName } = route.params || {};
 
-  const transactions = [
-    { id: '1', type: 'credit', category: 'Rent Payment', amount: 5000, date: '12 Jun 2026', time: '10:30 AM', ref: 'UPI/123456789' },
-    { id: '2', type: 'credit', category: 'Mess Fee', amount: 3000, date: '12 Jun 2026', time: '10:32 AM', ref: 'UPI/123456790' },
-    { id: '3', type: 'debit', category: 'Late Fine Added', amount: 500, date: '05 Jun 2026', time: '09:00 AM', ref: 'SYS/LATEFEE' },
-    { id: '4', type: 'credit', category: 'Rent Payment', amount: 5000, date: '10 May 2026', time: '02:15 PM', ref: 'CASH' },
-    { id: '5', type: 'credit', category: 'Security Deposit', amount: 10000, date: '10 Mar 2026', time: '11:00 AM', ref: 'BANK/TXN9876' },
-  ];
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [summary, setSummary] = useState<Summary>({ totalPaidYTD: 0, totalFines: 0 });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchTransactions = async (isRefresh = false) => {
+    if (!memberId) {
+      setLoading(false);
+      return;
+    }
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+
+    try {
+      const response = await getMemberTransactions(memberId);
+      if (response.status === 200 && response.data?.success) {
+        setTransactions(response.data.data.transactions || []);
+        setSummary(response.data.data.summary || { totalPaidYTD: 0, totalFines: 0 });
+      }
+    } catch (error) {
+      console.error('Error fetching member transactions:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchTransactions();
+    }, [memberId])
+  );
+
+  const onRefresh = () => fetchTransactions(true);
 
   return (
     <View style={styles.container}>
@@ -43,62 +91,125 @@ export default function MemberTransactionsScreen({ navigation, route }: any) {
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>Transaction History</Text>
-            <Text style={styles.headerSubtitle}>{memberName}</Text>
+            <Text style={styles.headerSubtitle}>{memberName || 'Member'}</Text>
           </View>
-          <TouchableOpacity style={styles.downloadButton}>
+          <TouchableOpacity style={styles.downloadButton} activeOpacity={0.8}>
             <Download color={colors.primary} size={20} strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Paid (YTD)</Text>
-          <Text style={styles.summaryAmount}>₹23,000</Text>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <View style={[styles.summaryDot, { backgroundColor: colors.success }]} />
-              <Text style={styles.summaryText}>Rent & Mess</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <View style={[styles.summaryDot, { backgroundColor: colors.danger }]} />
-              <Text style={styles.summaryText}>Fines</Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading transactions…</Text>
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }>
+
+          {/* Summary Card */}
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Total Paid (YTD)</Text>
+            <Text style={styles.summaryAmount}>
+              ₹{summary.totalPaidYTD.toLocaleString('en-IN')}
+            </Text>
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryItem}>
+                <View style={[styles.summaryDot, { backgroundColor: colors.success }]} />
+                <Text style={styles.summaryText}>Rent & Mess</Text>
+              </View>
+              {summary.totalFines > 0 && (
+                <View style={styles.summaryItem}>
+                  <View style={[styles.summaryDot, { backgroundColor: colors.danger }]} />
+                  <Text style={styles.summaryText}>
+                    Fines: ₹{summary.totalFines.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
-        </View>
 
-        <Text style={styles.sectionTitle}>All Transactions</Text>
-        
-        <View style={styles.listContainer}>
-          {transactions.map((txn) => {
-            const isCredit = txn.type === 'credit';
-            return (
-              <View key={txn.id} style={styles.txnCard}>
-                <View style={styles.txnLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: isCredit ? colors.successBg : colors.dangerBg }]}>
-                    {isCredit ? (
-                      <ArrowDownRight color={colors.success} size={20} strokeWidth={2.5} />
-                    ) : (
-                      <ArrowUpRight color={colors.danger} size={20} strokeWidth={2.5} />
-                    )}
-                  </View>
-                  <View>
-                    <Text style={styles.txnTitle}>{txn.category}</Text>
-                    <Text style={styles.txnDate}>{txn.date} • {txn.time}</Text>
-                    <Text style={styles.txnRef}>Ref: {txn.ref}</Text>
-                  </View>
-                </View>
-                <Text style={[styles.txnAmount, { color: isCredit ? colors.success : colors.danger }]}>
-                  {isCredit ? '+' : '-'}₹{txn.amount}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-        
-        <View style={{ height: 40 }} />
-      </ScrollView>
+          <Text style={styles.sectionTitle}>All Transactions</Text>
+
+          {transactions.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Receipt color={colors.textTertiary} size={48} strokeWidth={1.5} />
+              <Text style={styles.emptyTitle}>No Transactions Yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Fee payments for this member will appear here.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.listContainer}>
+              {transactions.map((txn) => {
+                const isCredit = txn.type === 'credit';
+                return (
+                  <TouchableOpacity 
+                    key={String(txn.id)} 
+                    style={styles.txnCard}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate('TransactionDetails', { id: txn.id })}
+                  >
+                    <View style={styles.txnLeft}>
+                      <View
+                        style={[
+                          styles.iconBox,
+                          { backgroundColor: isCredit ? colors.successBg : colors.dangerBg },
+                        ]}>
+                        {isCredit ? (
+                          <ArrowDownRight color={colors.success} size={20} strokeWidth={2.5} />
+                        ) : (
+                          <ArrowUpRight color={colors.danger} size={20} strokeWidth={2.5} />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.txnTitle}>{txn.category}</Text>
+                        <Text style={styles.txnDate}>
+                          {txn.date} • {txn.time}
+                        </Text>
+                        <Text style={styles.txnRef}>Ref: {txn.ref}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.txnRight}>
+                      <Text
+                        style={[
+                          styles.txnAmount,
+                          { color: isCredit ? colors.success : colors.danger },
+                        ]}>
+                        {isCredit ? '+' : '-'}₹{txn.amount.toLocaleString('en-IN')}
+                      </Text>
+                      <View
+                        style={[
+                          styles.methodBadge,
+                          { backgroundColor: isCredit ? colors.successBg : colors.dangerBg },
+                        ]}>
+                        <Text
+                          style={[
+                            styles.methodText,
+                            { color: isCredit ? colors.success : colors.danger },
+                          ]}>
+                          {txn.paymentMethod || txn.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -152,8 +263,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
   scrollContent: {
     padding: spacing.l,
+    paddingBottom: 100,
   },
   summaryCard: {
     backgroundColor: '#FFFFFF',
@@ -205,6 +328,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.m,
   },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl * 2,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+  },
   listContainer: {
     gap: spacing.m,
   },
@@ -225,6 +364,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.m,
+    flex: 1,
   },
   iconBox: {
     width: 48,
@@ -234,13 +374,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   txnTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.text,
     marginBottom: 2,
   },
   txnDate: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
     marginBottom: 2,
@@ -250,8 +390,21 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontWeight: '500',
   },
+  txnRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
   txnAmount: {
     fontSize: 16,
     fontWeight: '800',
+  },
+  methodBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  methodText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

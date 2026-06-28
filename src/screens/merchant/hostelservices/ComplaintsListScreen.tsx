@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -17,19 +20,116 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { getMerchantComplaints, updateComplaintStatus } from '../../../service/complaintService';
+
+const getPriority = (category: string) => {
+  switch (category) {
+    case 'Electrical': return 'High';
+    case 'Plumbing': return 'Medium';
+    case 'Internet': return 'Medium';
+    default: return 'Low';
+  }
+};
+
+const formatTime = (dateString: string) => {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  let timeStr = '';
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  timeStr = `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+
+  if (diffDays === 0 && now.getDate() === d.getDate()) {
+    return `Today, ${timeStr}`;
+  } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== d.getDate())) {
+    return `Yesterday, ${timeStr}`;
+  } else if (diffDays < 7) {
+    return `${diffDays} days ago`;
+  } else {
+    const standardMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d.getDate()} ${standardMonths[d.getMonth()]} ${d.getFullYear()}`;
+  }
+};
 
 export default function ComplaintsListScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'Pending' | 'Resolved'>('Pending');
+  const [complaints, setComplaints] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const complaints = [
-    { id: 'C-1001', room: '101', issue: 'AC Not Cooling', category: 'Electrical', status: 'Pending', date: 'Today, 09:30 AM', priority: 'High' },
-    { id: 'C-1002', room: '204', issue: 'Tap Leaking', category: 'Plumbing', status: 'Pending', date: 'Yesterday, 04:15 PM', priority: 'Medium' },
-    { id: 'C-1003', room: '105', issue: 'Fan making noise', category: 'Electrical', status: 'Resolved', date: '2 days ago', priority: 'Low' },
-    { id: 'C-1004', room: '302', issue: 'WiFi signal weak', category: 'Internet', status: 'Resolved', date: 'Last week', priority: 'Medium' },
-  ];
+  const fetchComplaints = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const response = await getMerchantComplaints();
+      if (response.status === 200 && response.data?.success) {
+        setComplaints(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch merchant complaints', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-  const filtered = complaints.filter(c => c.status === activeTab);
+  useFocusEffect(
+    useCallback(() => {
+      fetchComplaints(true);
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchComplaints(false);
+  };
+
+  const handleToggleStatus = (complaint: any) => {
+    const isResolved = complaint.status === 'Resolved';
+    const targetStatus = isResolved ? 'In Progress' : 'Resolved';
+    
+    Alert.alert(
+      isResolved ? 'Reopen Complaint?' : 'Resolve Complaint?',
+      `Are you sure you want to mark "${complaint.title}" (Room ${complaint.member?.room || '-'}) as ${isResolved ? 'In Progress' : 'Resolved'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: isResolved ? 'Reopen' : 'Resolve', 
+          style: isResolved ? 'destructive' : 'default',
+          onPress: async () => {
+            try {
+              const response = await updateComplaintStatus(complaint._id, { 
+                status: targetStatus,
+                updateText: isResolved ? 'Merchant reopened the issue.' : 'Merchant resolved the issue.' 
+              });
+              if (response.status === 200 && response.data?.success) {
+                Alert.alert('Success', `Complaint marked as ${targetStatus}`);
+                fetchComplaints(false);
+              } else {
+                Alert.alert('Error', response.data?.message || 'Failed to update status');
+              }
+            } catch (err) {
+              console.error(err);
+              Alert.alert('Error', 'Something went wrong');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const complaintsCountPending = complaints.filter(c => c.status === 'In Progress').length;
+  const filtered = complaints.filter(c => activeTab === 'Pending' ? c.status === 'In Progress' : c.status === 'Resolved');
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -38,6 +138,18 @@ export default function ComplaintsListScreen({ navigation }: any) {
       default: return colors.success;
     }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading complaints…
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -66,7 +178,7 @@ export default function ComplaintsListScreen({ navigation }: any) {
             onPress={() => setActiveTab('Pending')}
             activeOpacity={0.8}>
             <Text style={[styles.tabText, activeTab === 'Pending' && styles.tabTextActive]}>
-              Pending ({complaints.filter(c => c.status === 'Pending').length})
+              Pending ({complaintsCountPending})
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -80,7 +192,13 @@ export default function ComplaintsListScreen({ navigation }: any) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
+      >
         {filtered.length === 0 ? (
           <View style={styles.emptyState}>
             <CheckCircle2 color={colors.success} size={64} strokeWidth={1.5} />
@@ -88,39 +206,47 @@ export default function ComplaintsListScreen({ navigation }: any) {
             <Text style={styles.emptySubtitle}>There are no {activeTab.toLowerCase()} complaints at the moment.</Text>
           </View>
         ) : (
-          filtered.map((complaint) => (
-            <TouchableOpacity key={complaint.id} style={styles.complaintCard} activeOpacity={0.8}>
-              <View style={styles.cardHeader}>
-                <View style={styles.roomIdBadge}>
-                  <Text style={styles.roomIdText}>Room {complaint.room}</Text>
+          filtered.map((complaint) => {
+            const priority = getPriority(complaint.category);
+            return (
+              <TouchableOpacity 
+                key={complaint._id} 
+                style={styles.complaintCard} 
+                activeOpacity={0.8}
+                onPress={() => handleToggleStatus(complaint)}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={styles.roomIdBadge}>
+                    <Text style={styles.roomIdText}>Room {complaint.member?.room || '-'}</Text>
+                  </View>
+                  <Text style={styles.dateText}>{formatTime(complaint.createdAt)}</Text>
                 </View>
-                <Text style={styles.dateText}>{complaint.date}</Text>
-              </View>
-              
-              <Text style={styles.issueTitle}>{complaint.issue}</Text>
-              
-              <View style={styles.cardFooter}>
-                <View style={styles.categoryPill}>
-                  <Wrench color={colors.textSecondary} size={12} strokeWidth={2.5} />
-                  <Text style={styles.categoryText}>{complaint.category}</Text>
-                </View>
+                
+                <Text style={styles.issueTitle}>{complaint.title}</Text>
+                
+                <View style={styles.cardFooter}>
+                  <View style={styles.categoryPill}>
+                    <Wrench color={colors.textSecondary} size={12} strokeWidth={2.5} />
+                    <Text style={styles.categoryText}>{complaint.category}</Text>
+                  </View>
 
-                {activeTab === 'Pending' ? (
-                  <View style={[styles.priorityPill, { backgroundColor: `${getPriorityColor(complaint.priority)}15` }]}>
-                    <AlertTriangle color={getPriorityColor(complaint.priority)} size={12} strokeWidth={2.5} />
-                    <Text style={[styles.priorityText, { color: getPriorityColor(complaint.priority) }]}>
-                      {complaint.priority}
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={[styles.priorityPill, { backgroundColor: colors.successBg }]}>
-                    <CheckCircle2 color={colors.success} size={12} strokeWidth={2.5} />
-                    <Text style={[styles.priorityText, { color: colors.success }]}>Resolved</Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))
+                  {activeTab === 'Pending' ? (
+                    <View style={[styles.priorityPill, { backgroundColor: `${getPriorityColor(priority)}15` }]}>
+                      <AlertTriangle color={getPriorityColor(priority)} size={12} strokeWidth={2.5} />
+                      <Text style={[styles.priorityText, { color: getPriorityColor(priority) }]}>
+                        {priority}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.priorityPill, { backgroundColor: colors.successBg }]}>
+                      <CheckCircle2 color={colors.success} size={12} strokeWidth={2.5} />
+                      <Text style={[styles.priorityText, { color: colors.success }]}>Resolved</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })
         )}
         <View style={{ height: 40 }} />
       </ScrollView>

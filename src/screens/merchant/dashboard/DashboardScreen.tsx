@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   StatusBar,
   Animated,
   Dimensions,
-  Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Users,
@@ -28,56 +28,134 @@ import {
   MoreHorizontal,
   Coffee,
   Wrench,
+  LogOut,
+  X,
   Bell,
   Shield,
+  RefreshCw,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
-import StatCard from '../../../components/StatCard';
 import RevenueChart from '../../../components/RevenueChart';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
+import { getDashboardStats } from '../../../service/merchant';
 
 const { width } = Dimensions.get('window');
 
+// ── Helper ───────────────────────────────────────────────────────────────────
+const formatCurrency = (amount: number): string => {
+  if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
+  if (amount >= 1000) return `₹${(amount / 1000).toFixed(0)}K`;
+  return `₹${amount}`;
+};
+
+const formatTimeAgo = (dateStr: string): string => {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return `${Math.floor(diffHr / 24)}d ago`;
+};
+
+// ── Types ────────────────────────────────────────────────────────────────────
+interface DashboardStats {
+  totalMembers: number;
+  totalRooms: number;
+  totalCapacity: number;
+  totalOccupied: number;
+  availableBeds: number;
+  occupancyRate: number;
+  totalRevenue: number;
+  thisMonthRevenue: number;
+  pendingFees: number;
+  monthlyRevenue?: { value: number; label: string }[];
+}
+
+interface ActivityItem {
+  id: string;
+  type: string;
+  title: string;
+  subtitle: string;
+  detail: string;
+  createdAt: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 export default function DashboardScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [showTrialBanner, setShowTrialBanner] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [merchantName, setMerchantName] = useState('Admin');
+  const [stats, setStats] = useState<DashboardStats>({
+    totalMembers: 0,
+    totalRooms: 0,
+    totalCapacity: 0,
+    totalOccupied: 0,
+    availableBeds: 0,
+    occupancyRate: 0,
+    totalRevenue: 0,
+    thisMonthRevenue: 0,
+    pendingFees: 0,
+  });
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
+
+  // Dummy trial days — replace with subscription model later
+  const trialDaysLeft = 20;
+  const isBannerVisible = showTrialBanner || trialDaysLeft <= 3;
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const blobAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 700,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 700,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 700, useNativeDriver: true }),
     ]).start();
 
     Animated.loop(
       Animated.sequence([
-        Animated.timing(blobAnim, {
-          toValue: 1,
-          duration: 5000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(blobAnim, {
-          toValue: 0,
-          duration: 5000,
-          useNativeDriver: true,
-        }),
+        Animated.timing(blobAnim, { toValue: 1, duration: 5000, useNativeDriver: true }),
+        Animated.timing(blobAnim, { toValue: 0, duration: 5000, useNativeDriver: true }),
       ]),
     ).start();
   }, []);
 
-  const blobY = blobAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -20],
-  });
+  const blobY = blobAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -20] });
+
+  // ── Fetch dashboard data ─────────────────────────────────────────────────
+  const fetchDashboard = useCallback(async (showRefresh = false) => {
+    try {
+      if (showRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
+
+      const response = await getDashboardStats();
+
+      if (response.status === 200 && response.data?.success) {
+        const { merchant, stats: s, recentActivity: activity } = response.data.data;
+        setMerchantName(merchant?.name || 'Admin');
+        setStats(s);
+        setRecentActivity(activity || []);
+      }
+    } catch (err) {
+      console.log('Dashboard fetch error:', err);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboard();
+    }, [fetchDashboard]),
+  );
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -86,60 +164,79 @@ export default function DashboardScreen({ navigation }: any) {
     return 'Good Evening';
   };
 
+  const getInitial = (name: string) => (name ? name[0].toUpperCase() : 'A');
+
+  // ── Loading skeleton ─────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <LinearGradient
+          colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerBackground}
+        />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading dashboard…
+        </Text>
+      </View>
+    );
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Animated Header Background */}
-      <View style={styles.headerBackground}>
-        <Animated.View
-          style={[
-            styles.blob,
-            styles.blob1,
-            { transform: [{ translateY: blobY }] },
-          ]}
-        />
-        <Animated.View
-          style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]}
-        />
-        <View style={styles.glowEffect} />
-      </View>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
+        <Animated.View style={[styles.blob, styles.blob1, { transform: [{ translateY: blobY }] }]} />
+        <Animated.View style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]} />
+      </LinearGradient>
 
       <ScrollView
         style={{ flex: 1, marginTop: insets.top }}
         contentContainerStyle={[styles.scrollContent, { paddingTop: spacing.m }]}
         showsVerticalScrollIndicator={false}>
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }}>
-          {/* Top Header Section */}
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+
+          {/* ── Top Header ───────────────────────────────────────────────── */}
           <View style={styles.topBar}>
             <View style={styles.profileSection}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.avatarWrapper}
                 activeOpacity={0.8}
                 onPress={() => navigation.navigate('Profile')}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>A</Text>
+                  <Text style={styles.avatarText}>{getInitial(merchantName)}</Text>
                 </View>
                 <View style={styles.onlineDot} />
               </TouchableOpacity>
               <View style={styles.greetingContainer}>
                 <Text style={styles.greetingLabel}>{getGreeting()} 👋</Text>
-                <Text style={styles.greetingName}>Admin</Text>
+                <Text style={styles.greetingName}>{merchantName}</Text>
               </View>
             </View>
             <View style={styles.topActions}>
-              <TouchableOpacity 
-                style={styles.iconButton} 
+              <TouchableOpacity
+                style={styles.iconButton}
                 activeOpacity={0.7}
-                onPress={() => navigation.navigate('GlobalSearch')}>
-                <Search color={colors.text} size={20} strokeWidth={2.2} />
+                onPress={() => fetchDashboard(true)}>
+                <RefreshCw
+                  color={isRefreshing ? colors.primary : colors.text}
+                  size={20}
+                  strokeWidth={2.2}
+                />
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.iconButton} 
+
+              <TouchableOpacity
+                style={styles.iconButton}
                 activeOpacity={0.7}
                 onPress={() => navigation.navigate('Notifications')}>
                 <Bell color={colors.text} size={20} strokeWidth={2.2} />
@@ -150,12 +247,43 @@ export default function DashboardScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Welcome Card with Date */}
+          {/* ── Trial Banner ─────────────────────────────────────────────── */}
+          {isBannerVisible && (
+            <View style={styles.trialBanner}>
+              <View style={styles.trialBannerLeft}>
+                <View style={styles.trialIconBg}>
+                  <Sparkles color="#FFFFFF" size={18} strokeWidth={2.5} />
+                </View>
+                <View style={styles.trialTextContent}>
+                  <Text style={styles.trialTitle}>{trialDaysLeft} days left in Free Trial</Text>
+                  <Text style={styles.trialSub}>Enjoying the app? Upgrade now!</Text>
+                </View>
+              </View>
+              <View style={styles.trialBannerRight}>
+                <TouchableOpacity
+                  style={styles.trialUpgradeBtn}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('SubscriptionUpgrade')}>
+                  <Text style={styles.trialUpgradeText}>Upgrade</Text>
+                </TouchableOpacity>
+                {trialDaysLeft > 3 && (
+                  <TouchableOpacity
+                    style={styles.trialCloseBtn}
+                    onPress={() => setShowTrialBanner(false)}
+                    activeOpacity={0.7}>
+                    <X color="#9CA3AF" size={20} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* ── Today's Overview Card ────────────────────────────────────── */}
           <View style={styles.welcomeCard}>
             <View style={styles.welcomeLeft}>
               <Text style={styles.welcomeTitle}>Today's Overview</Text>
               <View style={styles.dateRow}>
-                <Calendar color="rgba(255,255,255,0.85)" size={14} strokeWidth={2.2} />
+                <Calendar color={colors.textSecondary} size={14} strokeWidth={2.2} />
                 <Text style={styles.dateText}>
                   {new Date().toLocaleDateString('en-US', {
                     weekday: 'long',
@@ -170,12 +298,12 @@ export default function DashboardScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Stats Grid - Featured Revenue Card + smaller stats */}
+          {/* ── Revenue Featured Card ────────────────────────────────────── */}
           <View style={styles.featuredCard}>
             <View style={styles.featuredHeader}>
               <View>
                 <Text style={styles.featuredLabel}>Total Revenue</Text>
-                <Text style={styles.featuredValue}>₹4,20,000</Text>
+                <Text style={styles.featuredValue}>{formatCurrency(stats.totalRevenue)}</Text>
               </View>
               <View style={styles.featuredTrend}>
                 <ArrowUpRight color={colors.success} size={14} strokeWidth={2.5} />
@@ -186,23 +314,30 @@ export default function DashboardScreen({ navigation }: any) {
             <View style={styles.featuredFooter}>
               <View style={styles.featuredItem}>
                 <Text style={styles.featuredItemLabel}>This Month</Text>
-                <Text style={styles.featuredItemValue}>₹2.8L</Text>
+                <Text style={styles.featuredItemValue}>
+                  {formatCurrency(stats.thisMonthRevenue)}
+                </Text>
               </View>
               <View style={styles.featuredItemDivider} />
               <View style={styles.featuredItem}>
-                <Text style={styles.featuredItemLabel}>Expenses</Text>
-                <Text style={styles.featuredItemValue}>₹85K</Text>
+                <Text style={styles.featuredItemLabel}>Pending</Text>
+                <Text style={[styles.featuredItemValue, { color: colors.danger }]}>
+                  {formatCurrency(stats.pendingFees)}
+                </Text>
               </View>
               <View style={styles.featuredItemDivider} />
               <View style={styles.featuredItem}>
-                <Text style={styles.featuredItemLabel}>Profit</Text>
-                <Text style={[styles.featuredItemValue, { color: colors.success }]}>₹1.95L</Text>
+                <Text style={styles.featuredItemLabel}>Rooms</Text>
+                <Text style={[styles.featuredItemValue, { color: colors.primary }]}>
+                  {stats.totalRooms}
+                </Text>
               </View>
             </View>
           </View>
 
-          {/* Stats Grid */}
+          {/* ── Stats Grid ───────────────────────────────────────────────── */}
           <View style={styles.statsGrid}>
+            {/* Row 1 */}
             <View style={styles.statsRow}>
               <TouchableOpacity
                 style={[styles.miniStat, { backgroundColor: '#EEF2FF' }]}
@@ -217,7 +352,7 @@ export default function DashboardScreen({ navigation }: any) {
                     <Text style={styles.miniTrendTextUp}>12%</Text>
                   </View>
                 </View>
-                <Text style={styles.miniStatValue}>156</Text>
+                <Text style={styles.miniStatValue}>{stats.totalMembers}</Text>
                 <Text style={styles.miniStatLabel}>Members</Text>
               </TouchableOpacity>
 
@@ -233,11 +368,12 @@ export default function DashboardScreen({ navigation }: any) {
                     <Text style={styles.miniTrendTextNeutral}>—</Text>
                   </View>
                 </View>
-                <Text style={styles.miniStatValue}>24</Text>
+                <Text style={styles.miniStatValue}>{stats.availableBeds}</Text>
                 <Text style={styles.miniStatLabel}>Available Beds</Text>
               </TouchableOpacity>
             </View>
 
+            {/* Row 2 */}
             <View style={styles.statsRow}>
               <TouchableOpacity
                 style={[styles.miniStat, { backgroundColor: '#FEF2F2' }]}
@@ -252,7 +388,7 @@ export default function DashboardScreen({ navigation }: any) {
                     <Text style={styles.miniTrendTextDown}>5%</Text>
                   </View>
                 </View>
-                <Text style={styles.miniStatValue}>₹45K</Text>
+                <Text style={styles.miniStatValue}>{formatCurrency(stats.pendingFees)}</Text>
                 <Text style={styles.miniStatLabel}>Pending Fees</Text>
               </TouchableOpacity>
 
@@ -269,13 +405,13 @@ export default function DashboardScreen({ navigation }: any) {
                     <Text style={styles.miniTrendTextUp}>8%</Text>
                   </View>
                 </View>
-                <Text style={styles.miniStatValue}>92%</Text>
+                <Text style={styles.miniStatValue}>{stats.occupancyRate}%</Text>
                 <Text style={styles.miniStatLabel}>Occupancy</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Quick Actions */}
+          {/* ── Quick Actions ─────────────────────────────────────────────── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -283,7 +419,10 @@ export default function DashboardScreen({ navigation }: any) {
                 <Text style={styles.seeAllText}>See all</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.actionsRow}>
               <TouchableOpacity
                 style={styles.actionButton}
                 activeOpacity={0.85}
@@ -366,7 +505,7 @@ export default function DashboardScreen({ navigation }: any) {
             </ScrollView>
           </View>
 
-          {/* Revenue Chart */}
+          {/* ── Revenue Chart ─────────────────────────────────────────────── */}
           <View style={styles.chartCard}>
             <View style={styles.chartHeader}>
               <View>
@@ -377,65 +516,64 @@ export default function DashboardScreen({ navigation }: any) {
                 <MoreHorizontal color={colors.textSecondary} size={20} />
               </TouchableOpacity>
             </View>
-            <RevenueChart />
+            <RevenueChart
+              currentRevenue={stats.totalRevenue}
+              data={stats.monthlyRevenue}
+            />
           </View>
 
-          {/* Recent Activity */}
+          {/* ── Recent Activity ───────────────────────────────────────────── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Recent Activity</Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate('StudentsTab')}>
                 <Text style={styles.seeAllText}>View all</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.activityList}>
-              <View style={styles.activityItem}>
-                <View style={[styles.activityIcon, { backgroundColor: colors.primaryBg }]}>
-                  <UserCheck color={colors.primary} size={18} strokeWidth={2.5} />
+              {recentActivity.length === 0 ? (
+                <View style={styles.emptyActivity}>
+                  <Users color={colors.textTertiary} size={32} strokeWidth={1.5} />
+                  <Text style={styles.emptyActivityText}>No recent activity yet</Text>
                 </View>
-                <View style={styles.activityContent}>
-                  <Text style={styles.activityTitle}>New member registered</Text>
-                  <Text style={styles.activityTime}>Rahul Sharma · 2 min ago</Text>
-                </View>
-                <View style={[styles.activityBadge, { backgroundColor: colors.successBg }]}>
-                  <Text style={[styles.activityBadgeText, { color: colors.success }]}>+1</Text>
-                </View>
-              </View>
-
-              <View style={styles.activityItem}>
-                <View style={[styles.activityIcon, { backgroundColor: colors.successBg }]}>
-                  <CreditCard color={colors.success} size={18} strokeWidth={2.5} />
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={styles.activityTitle}>Fee payment received</Text>
-                  <Text style={styles.activityTime}>Priya Patel · ₹12,500 · 15 min ago</Text>
-                </View>
-                <View style={[styles.activityBadge, { backgroundColor: colors.successBg }]}>
-                  <IndianRupee color={colors.success} size={12} strokeWidth={2.5} />
-                </View>
-              </View>
-
-              <View style={styles.activityItem}>
-                <View style={[styles.activityIcon, { backgroundColor: colors.warningBg }]}>
-                  <BedDouble color={colors.warning} size={18} strokeWidth={2.5} />
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={styles.activityTitle}>Room 204 maintenance</Text>
-                  <Text style={styles.activityTime}>Scheduled · 1 hour ago</Text>
-                </View>
-                <View style={[styles.activityBadge, { backgroundColor: colors.warningBg }]}>
-                  <Text style={[styles.activityBadgeText, { color: colors.warning }]}>!</Text>
-                </View>
-              </View>
+              ) : (
+                recentActivity.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.activityItem}
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate('StudentsTab', { screen: 'StudentDetails', params: { memberId: item.id } })}>
+                    <View style={[styles.activityIcon, { backgroundColor: colors.primaryBg }]}>
+                      <UserCheck color={colors.primary} size={18} strokeWidth={2.5} />
+                    </View>
+                    <View style={styles.activityContent}>
+                      <Text style={styles.activityTitle}>{item.title}</Text>
+                      <Text style={styles.activityTime}>
+                        {item.subtitle}
+                        {item.detail ? ` · ${item.detail}` : ''}
+                        {' · '}
+                        {formatTimeAgo(item.createdAt)}
+                      </Text>
+                    </View>
+                    <View style={[styles.activityBadge, { backgroundColor: colors.successBg }]}>
+                      <Text style={[styles.activityBadgeText, { color: colors.success }]}>+1</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
             </View>
           </View>
+
+          {/* Bottom padding */}
+          <View style={{ height: 40 }} />
         </Animated.View>
       </ScrollView>
     </View>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -446,43 +584,35 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 320,
-    backgroundColor: colors.primary,
+    height: 340,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.2,
   },
   blob1: {
     width: 260,
     height: 260,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -120,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 80,
     left: -60,
-    opacity: 0.15,
-  },
-  glowEffect: {
-    position: 'absolute',
-    width: width,
-    height: 120,
-    bottom: 0,
-    backgroundColor: colors.primary,
-    opacity: 0.5,
   },
   scrollContent: {
     paddingHorizontal: spacing.l,
     paddingTop: spacing.m,
     paddingBottom: 100,
   },
+  // ── Header ────────────────────────────────────────────────────────────────
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -495,23 +625,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.m,
   },
-  avatarWrapper: {
-    position: 'relative',
-  },
+  avatarWrapper: { position: 'relative' },
   avatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   avatarText: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#16A34A',
   },
   onlineDot: {
     position: 'absolute',
@@ -522,21 +653,19 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: colors.success,
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: '#FFFFFF',
   },
-  greetingContainer: {
-    justifyContent: 'center',
-  },
+  greetingContainer: { justifyContent: 'center' },
   greetingLabel: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.85)',
+    color: colors.textSecondary,
     fontWeight: '500',
     marginBottom: 2,
   },
   greetingName: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: '800',
+    color: colors.text,
     letterSpacing: -0.3,
   },
   topActions: {
@@ -547,11 +676,14 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   notificationBadge: {
     position: 'absolute',
@@ -564,31 +696,91 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: '#FFFFFF',
   },
   badgeText: {
     fontSize: 10,
     fontWeight: '800',
     color: '#FFFFFF',
   },
+  // ── Trial Banner ──────────────────────────────────────────────────────────
+  trialBanner: {
+    backgroundColor: colors.text,
+    borderRadius: 20,
+    padding: spacing.m,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.m,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  trialBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.m,
+  },
+  trialIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trialTextContent: { flex: 1 },
+  trialTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  trialSub: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9CA3AF',
+  },
+  trialBannerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s,
+  },
+  trialUpgradeBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  trialUpgradeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  trialCloseBtn: { padding: 4, marginLeft: 2 },
+  // ── Welcome Card ──────────────────────────────────────────────────────────
   welcomeCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: spacing.m,
     marginBottom: spacing.l,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6,
   },
-  welcomeLeft: {
-    flex: 1,
-  },
+  welcomeLeft: { flex: 1 },
   welcomeTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.text,
     marginBottom: 4,
   },
   dateRow: {
@@ -598,17 +790,18 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '500',
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
   welcomeBadge: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F0FDF4',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // ── Featured Revenue Card ─────────────────────────────────────────────────
   featuredCard: {
     backgroundColor: colors.surface,
     borderRadius: 24,
@@ -683,6 +876,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginHorizontal: spacing.s,
   },
+  // ── Stats Grid ────────────────────────────────────────────────────────────
   statsGrid: {
     gap: spacing.m,
     marginTop: spacing.m,
@@ -695,17 +889,21 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 20,
     padding: spacing.m,
-    minHeight: 110,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
   miniStatHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.s,
+    marginBottom: spacing.m,
   },
   miniIcon: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -713,44 +911,36 @@ const styles = StyleSheet.create({
   miniTrendUp: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
     gap: 2,
-  },
-  miniTrendTextUp: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.success,
   },
   miniTrendDown: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
     gap: 2,
   },
+  miniTrendNeutral: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  miniTrendTextUp: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.success,
+  },
   miniTrendTextDown: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.danger,
   },
-  miniTrendNeutral: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
   miniTrendTextNeutral: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.textSecondary,
   },
   miniStatValue: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: '800',
     color: colors.text,
     letterSpacing: -0.5,
@@ -759,21 +949,19 @@ const styles = StyleSheet.create({
   miniStatLabel: {
     fontSize: 12,
     color: colors.textSecondary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  section: {
-    marginTop: spacing.xl,
-    gap: spacing.m,
-  },
+  // ── Quick Actions ─────────────────────────────────────────────────────────
+  section: { marginTop: spacing.l },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 2,
+    marginBottom: spacing.m,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: colors.text,
     letterSpacing: -0.3,
   },
@@ -784,45 +972,43 @@ const styles = StyleSheet.create({
   },
   actionsRow: {
     flexDirection: 'row',
-    gap: spacing.s,
-    paddingHorizontal: 2,
+    gap: spacing.m,
+    paddingRight: spacing.l,
   },
   actionButton: {
-    width: 82,
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: spacing.m,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    width: 72,
   },
   actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.s,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
   },
   actionText: {
     fontSize: 11,
-    fontWeight: '600',
     color: colors.text,
+    fontWeight: '600',
     textAlign: 'center',
     lineHeight: 14,
   },
+  // ── Chart Card ────────────────────────────────────────────────────────────
   chartCard: {
     backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.l,
-    marginTop: spacing.xl,
+    marginTop: spacing.l,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
     elevation: 3,
   },
   chartHeader: {
@@ -843,55 +1029,51 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   moreButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  activityList: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: spacing.s,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
-  },
+  // ── Activity ──────────────────────────────────────────────────────────────
+  activityList: { gap: spacing.s },
   activityItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.s,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.m,
     gap: spacing.m,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   activityIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  activityContent: {
-    flex: 1,
-  },
+  activityContent: { flex: 1 },
   activityTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   activityTime: {
-    fontSize: 12,
-    color: colors.textTertiary,
+    fontSize: 11,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   activityBadge: {
-    minWidth: 28,
+    width: 28,
     height: 28,
-    borderRadius: 14,
-    paddingHorizontal: 8,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -899,19 +1081,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  logoutButton: {
-    flexDirection: 'row',
+  emptyActivity: {
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.dangerBg,
-    paddingVertical: 14,
-    borderRadius: 16,
-    marginTop: spacing.xl,
+    paddingVertical: 32,
     gap: 8,
   },
-  logoutText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.danger,
+  emptyActivityText: {
+    fontSize: 13,
+    color: colors.textTertiary,
+    fontWeight: '500',
   },
 });

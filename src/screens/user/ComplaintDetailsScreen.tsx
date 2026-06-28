@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   StatusBar,
   Animated,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -14,14 +16,69 @@ import {
   CheckCircle2,
   Calendar,
   Zap,
+  Droplets,
+  Wind,
+  AlertCircle,
+  Wifi,
+  Wrench,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { getComplaintById } from '../../service/complaintService';
+
+// Helper to get category icons
+const getCategoryIcon = (category: string) => {
+  switch (category) {
+    case 'Electrical': return <Zap color={colors.primary} size={18} strokeWidth={2.5} />;
+    case 'Plumbing': return <Droplets color={colors.info} size={18} strokeWidth={2.5} />;
+    case 'Cleaning': return <Wind color={colors.success} size={18} strokeWidth={2.5} />;
+    case 'Internet': return <Wifi color={colors.info} size={18} strokeWidth={2.5} />;
+    case 'Carpentry': return <Wrench color={colors.warning} size={18} strokeWidth={2.5} />;
+    default: return <AlertCircle color={colors.warning} size={18} strokeWidth={2.5} />;
+  }
+};
+
+const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+  
+  const standardMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const datePart = `${String(d.getDate()).padStart(2, '0')} ${standardMonths[d.getMonth()]} ${d.getFullYear()}`;
+  
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const timePart = `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+  
+  return `${datePart}, ${timePart}`;
+};
+
+const formatUpdateDate = (dateString: string) => {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+  
+  const standardMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  return `${d.getDate()} ${standardMonths[d.getMonth()]}, ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+};
 
 export default function ComplaintDetailsScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { id } = route.params || {};
   
+  const [complaint, setComplaint] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -38,20 +95,62 @@ export default function ComplaintDetailsScreen({ route, navigation }: any) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
-  
-  const complaint = {
-    id: '1',
-    title: 'AC not cooling',
-    category: 'Electrical',
-    description: 'The AC in Room 101 has stopped cooling entirely since yesterday night. It only blows normal air.',
-    date: '12 Jun 2026, 09:30 AM',
-    status: 'In Progress',
-    updates: [
-      { id: 'u1', text: 'Technician has been assigned. Will visit today by 4 PM.', date: '12 Jun, 11:00 AM' },
-      { id: 'u2', text: 'Complaint registered successfully.', date: '12 Jun, 09:30 AM' }
-    ]
-  };
+  }, [loading]);
+
+  useEffect(() => {
+    const fetchComplaint = async () => {
+      if (!id) {
+        setError('No complaint ID provided');
+        setLoading(false);
+        return;
+      }
+      try {
+        const response = await getComplaintById(id);
+        if (response.status === 200 && response.data?.success) {
+          setComplaint(response.data.data);
+        } else {
+          setError(response.data?.message || 'Failed to fetch details');
+        }
+      } catch (err) {
+        console.error(err);
+        setError('Failed to fetch details');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchComplaint();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading details…
+        </Text>
+      </View>
+    );
+  }
+
+  if (error || !complaint) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <AlertCircle color={colors.danger} size={48} />
+        <Text style={{ marginTop: 12, color: colors.text, fontWeight: '700', fontSize: 16 }}>
+          {error || 'Complaint not found'}
+        </Text>
+        <TouchableOpacity 
+          style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 12 }} 
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -87,7 +186,7 @@ export default function ComplaintDetailsScreen({ route, navigation }: any) {
             <View style={styles.cardHeader}>
               <View style={styles.categoryBadgeWrapper}>
                 <View style={styles.iconCircle}>
-                  <Zap color="#4F46E5" size={18} strokeWidth={2.5} />
+                  {getCategoryIcon(complaint.category)}
                 </View>
                 <Text style={styles.categoryText}>{complaint.category}</Text>
               </View>
@@ -113,36 +212,47 @@ export default function ComplaintDetailsScreen({ route, navigation }: any) {
             <Text style={styles.complaintTitle}>{complaint.title}</Text>
             <View style={styles.dateRow}>
               <Calendar color={colors.textSecondary} size={16} />
-              <Text style={styles.dateText}>Raised on {complaint.date}</Text>
+              <Text style={styles.dateText}>Raised on {formatDate(complaint.createdAt)}</Text>
             </View>
 
             <View style={styles.divider} />
             
             <Text style={styles.descriptionLabel}>Description</Text>
             <Text style={styles.descriptionText}>{complaint.description}</Text>
+
+            {complaint.image && (
+              <View style={styles.attachmentContainer}>
+                <Text style={styles.attachmentLabel}>Attached Photo</Text>
+                <Image source={{ uri: complaint.image }} style={styles.attachmentImage} />
+              </View>
+            )}
           </View>
 
-          <Text style={styles.sectionTitle}>Status Timeline</Text>
-          <View style={styles.timelineCard}>
-            {complaint.updates.map((update, index) => (
-              <View key={update.id} style={styles.timelineItem}>
-                <View style={styles.timelineLeft}>
-                  <View style={[
-                    styles.timelineDot,
-                    index === 0 && styles.timelineDotActive
-                  ]} />
-                  {index !== complaint.updates.length - 1 && <View style={styles.timelineLine} />}
-                </View>
-                <View style={styles.timelineRight}>
-                  <Text style={[
-                    styles.timelineUpdate,
-                    index === 0 && styles.timelineUpdateActive
-                  ]}>{update.text}</Text>
-                  <Text style={styles.timelineDate}>{update.date}</Text>
-                </View>
+          {complaint.updates && complaint.updates.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Status Timeline</Text>
+              <View style={styles.timelineCard}>
+                {complaint.updates.map((update: any, index: number) => (
+                  <View key={update._id || index} style={styles.timelineItem}>
+                    <View style={styles.timelineLeft}>
+                      <View style={[
+                        styles.timelineDot,
+                        index === 0 && styles.timelineDotActive
+                      ]} />
+                      {index !== complaint.updates.length - 1 && <View style={styles.timelineLine} />}
+                    </View>
+                    <View style={styles.timelineRight}>
+                      <Text style={[
+                        styles.timelineUpdate,
+                        index === 0 && styles.timelineUpdateActive
+                      ]}>{update.text}</Text>
+                      <Text style={styles.timelineDate}>{formatUpdateDate(update.date)}</Text>
+                    </View>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            </>
+          )}
 
         </Animated.View>
       </ScrollView>
@@ -283,6 +393,21 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 24,
     fontWeight: '500',
+  },
+  attachmentContainer: {
+    marginTop: spacing.xl,
+  },
+  attachmentLabel: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  attachmentImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 16,
+    resizeMode: 'cover',
   },
   sectionTitle: {
     fontSize: 20,

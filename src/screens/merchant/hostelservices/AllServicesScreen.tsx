@@ -17,6 +17,7 @@ import {
   Wallet,
   Bell,
   Shield,
+  ClipboardList,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,6 +34,7 @@ export default function AllServicesScreen({ navigation }: any) {
     { id: '6', title: 'Maintenance', icon: Wrench, color: colors.danger, screen: 'ComplaintsList', stack: 'DashboardTab' },
     { id: '7', title: 'Add Room', icon: Home, color: colors.info, screen: 'AddRoom', stack: 'RoomsTab' },
     { id: '8', title: 'Expense Track', icon: Wallet, color: '#8B5CF6', screen: 'ExpenseTracking', stack: 'FeesTab' },
+    { id: '9', title: 'Visitor Requests', icon: ClipboardList, color: '#F59E0B', screen: 'VisitorRequestsApproval', stack: 'DashboardTab' },
   ];
 
   const handlePress = (service: any) => {

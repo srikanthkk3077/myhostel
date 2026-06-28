@@ -9,6 +9,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   Switch,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -21,20 +23,121 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { updateRoom, deleteRoom } from '../../../service/merchant';
 
 export default function EditRoomScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { room } = route.params || { room: { id: '101', type: 'Double', capacity: 2, floor: 1, price: 10000, isAC: false } };
 
+  // Parse base room type from stored value like "Double (AC)" or "Single (Non-AC)"
+  const parseRoomType = (rawType: string): string => {
+    return rawType.replace(/\s*\((?:Non-)?AC\)\s*/gi, '').trim() || 'Double';
+  };
+
   const [roomNumber, setRoomNumber] = useState(room.id || '');
-  const [roomType, setRoomType] = useState<'Single' | 'Double' | 'Triple' | 'Dorm'>(room.type || 'Double');
+  const [roomType, setRoomType] = useState<'Single' | 'Double' | 'Triple' | 'Dorm'>(
+    parseRoomType(room.type || 'Double') as any
+  );
   const [capacity, setCapacity] = useState(String(room.capacity || 2));
   const [floor, setFloor] = useState(String(room.floor || 1));
   const [price, setPrice] = useState(String(room.price || 10000));
   const [isAC, setIsAC] = useState(room.isAC || false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleSave = () => {
-    navigation.goBack();
+  const handleSave = async () => {
+    if (!roomNumber || !price || !floor || !capacity) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (!room._id) {
+      Alert.alert('Error', 'Room ID is missing');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const payload = {
+        roomNumber,
+        floor: parseInt(floor, 10),
+        pricePerMonth: parseInt(price, 10),
+        roomType: isAC ? `${roomType} (AC)` : `${roomType} (Non-AC)`,
+        roomCapacity: parseInt(capacity, 10),
+      };
+      
+      const response = await updateRoom(room._id, payload as any);
+      
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert('Success', 'Room updated successfully', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      } else {
+        Alert.alert('Failed', response.data?.message || 'Update failed');
+      }
+    } catch (error: any) {
+      const responseData = error?.response?.data;
+
+      // Handle over-capacity block from backend
+      if (responseData?.code === 'OVER_CAPACITY') {
+        const memberNames = (responseData.members || [])
+          .slice(responseData.newCapacity) // Only show the extra members
+          .map((m: any) => `• ${m.name}`)
+          .join('\n');
+
+        Alert.alert(
+          '⚠️ Over Capacity',
+          `${responseData.message}\n\nMembers to transfer:\n${memberNames}`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Go Transfer Members',
+              onPress: () => navigation.goBack(), // Goes back to RoomDetails where Transfer buttons will be shown
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Error', responseData?.message || error?.message || 'Something went wrong');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!room._id) {
+      Alert.alert('Error', 'Room ID is missing');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Room',
+      'Are you sure you want to delete this room? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              const response = await deleteRoom(room._id);
+              if (response.status === 200 && response.data?.success) {
+                Alert.alert('Success', 'Room deleted', [
+                  { text: 'OK', onPress: () => navigation.navigate('RoomsList') } // navigate back to rooms tab
+                ]);
+              } else {
+                Alert.alert('Failed', response.data?.message || 'Could not delete room');
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error?.message || 'Something went wrong');
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const renderInput = (
@@ -137,9 +240,19 @@ export default function EditRoomScreen({ navigation, route }: any) {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.saveButton} activeOpacity={0.85} onPress={handleSave}>
-            <Save color="#FFFFFF" size={18} strokeWidth={2.5} />
-            <Text style={styles.saveButtonText}>Save Changes</Text>
+          <TouchableOpacity style={styles.saveButton} activeOpacity={0.85} onPress={handleSave} disabled={isLoading || isDeleting}>
+            {isLoading ? <ActivityIndicator color="#FFFFFF" /> : (
+              <>
+                <Save color="#FFFFFF" size={18} strokeWidth={2.5} />
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.deleteButton} activeOpacity={0.85} onPress={handleDelete} disabled={isLoading || isDeleting}>
+             {isDeleting ? <ActivityIndicator color="#EF4444" /> : (
+               <Text style={styles.deleteButtonText}>Delete Room</Text>
+             )}
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />
@@ -306,6 +419,21 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  deleteButton: {
+    marginTop: spacing.m,
+    paddingVertical: 16,
+    borderRadius: 20,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  deleteButtonText: {
+    color: '#EF4444',
     fontSize: 16,
     fontWeight: '700',
   },

@@ -107,7 +107,7 @@ export default function HelpSupportScreen({ navigation }: any) {
               <View style={styles.faqIconBox}>
                 <FileText color="#0D9488" size={20} />
               </View>
-              <Text style={styles.faqText}>How to apply for a gate pass?</Text>
+              <Text style={styles.faqText}>How to request a visitor entry?</Text>
               <ChevronRight color={colors.border} size={20} />
             </TouchableOpacity>
             

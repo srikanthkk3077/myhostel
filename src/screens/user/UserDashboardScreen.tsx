@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   StatusBar,
   Animated,
   Dimensions,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {
   Bell,
@@ -21,15 +23,49 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { getUserDashboard } from '../../service/merchant';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
 export default function UserDashboardScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const blobAnim = useRef(new Animated.Value(0)).current;
+
+  const fetchDashboardData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const response = await getUserDashboard();
+      if (response.status === 200 && response.data?.success) {
+        setData(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user dashboard', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboardData(true);
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchDashboardData(false);
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -66,30 +102,97 @@ export default function UserDashboardScreen({ navigation }: any) {
     outputRange: [0, -20],
   });
 
-  const notices = [
-    { id: '1', title: 'Water Supply Issue', date: 'Today, 10:00 AM', priority: 'high' },
-    { id: '2', title: 'Mess Menu Updated', date: 'Yesterday, 6:00 PM', priority: 'normal' },
-    { id: '3', title: 'WiFi Maintenance', date: '12 Jun, 2:00 PM', priority: 'normal' },
-  ];
+  const getInitials = (name: string) => {
+    if (!name) return 'U';
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('authToken');
+    await AsyncStorage.removeItem('userRole');
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Login' }],
+    });
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading dashboard…
+        </Text>
+      </View>
+    );
+  }
+
+  if (data && !data.hasAdmission) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: spacing.xl }]}>
+        <AlertCircle color={colors.warning} size={56} strokeWidth={2} />
+        <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, marginTop: 16, textAlign: 'center' }}>
+          No Active Admission
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
+          Your phone number ({data.mobile}) is registered in the app, but no active hostel admission has been created for it yet.
+        </Text>
+        <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center', marginTop: 12, fontStyle: 'italic' }}>
+          Please ask your hostel manager or warden to register your details under this phone number.
+        </Text>
+        
+        <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+          <TouchableOpacity 
+            style={[styles.payButton, { backgroundColor: colors.border }]} 
+            onPress={onRefresh}>
+            <Text style={{ color: colors.text, fontWeight: '700' }}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.payButton, { backgroundColor: colors.danger }]} 
+            onPress={handleLogout}>
+            <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  const rentInfo = data?.rent || { amount: 0, dueAmount: 0, isPaid: false, period: '-', status: 'No Dues' };
+  const accommodation = data?.accommodation || { roomNumber: '-', roomType: '-', bed: '-', floor: '-' };
+  const roommates = data?.roommates || [];
+  const notices = data?.notices || [];
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Header Background */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[styles.blob, styles.blob1, { transform: [{ translateY: blobY }] }]}
         />
         <Animated.View
           style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]}
         />
-      </View>
+      </LinearGradient>
 
       <ScrollView
         style={{ flex: 1, marginTop: insets.top }}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }>
         <Animated.View
           style={{
             opacity: fadeAnim,
@@ -100,13 +203,13 @@ export default function UserDashboardScreen({ navigation }: any) {
           <View style={styles.topBar}>
             <View>
               <Text style={styles.greeting}>Welcome back,</Text>
-              <Text style={styles.userName}>Rahul Sharma</Text>
+              <Text style={styles.userName}>{data?.name || 'User'}</Text>
             </View>
             <TouchableOpacity 
               style={styles.profileAvatar} 
               activeOpacity={0.8}
               onPress={() => navigation.navigate('ProfileTab')}>
-              <Text style={styles.avatarText}>RS</Text>
+              <Text style={styles.avatarText}>{getInitials(data?.name)}</Text>
             </TouchableOpacity>
           </View>
 
@@ -115,23 +218,41 @@ export default function UserDashboardScreen({ navigation }: any) {
             <View style={styles.rentHeader}>
               <View>
                 <Text style={styles.rentLabel}>Current Month Rent</Text>
-                <Text style={styles.rentAmount}>₹12,500</Text>
+                <Text style={styles.rentAmount}>₹{rentInfo.amount}</Text>
               </View>
-              <View style={styles.statusBadgePending}>
-                <AlertCircle color={colors.warning} size={14} strokeWidth={2.5} />
-                <Text style={styles.statusTextPending}>Due in 3 days</Text>
+              <View style={rentInfo.isPaid ? {
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: colors.successBg,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 12,
+                gap: 4,
+              } : styles.statusBadgePending}>
+                {rentInfo.isPaid ? (
+                  <CheckCircle2 color={colors.success} size={14} strokeWidth={2.5} />
+                ) : (
+                  <AlertCircle color={colors.warning} size={14} strokeWidth={2.5} />
+                )}
+                <Text style={rentInfo.isPaid ? {
+                  fontSize: 12,
+                  fontWeight: '700',
+                  color: colors.success,
+                } : styles.statusTextPending}>{rentInfo.status}</Text>
               </View>
             </View>
             
             <View style={styles.rentFooter}>
-              <Text style={styles.rentPeriod}>For: June 2026</Text>
-              <TouchableOpacity 
-                style={styles.payButton} 
-                activeOpacity={0.8}
-                onPress={() => navigation.navigate('PaymentsTab')}>
-                <Text style={styles.payButtonText}>Pay Now</Text>
-                <ChevronRight color="#FFFFFF" size={16} />
-              </TouchableOpacity>
+              <Text style={styles.rentPeriod}>For: {rentInfo.period}</Text>
+              {!rentInfo.isPaid && (
+                <TouchableOpacity 
+                  style={styles.payButton} 
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('PaymentsTab')}>
+                  <Text style={styles.payButtonText}>Pay Now</Text>
+                  <ChevronRight color="#FFFFFF" size={16} />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -144,32 +265,38 @@ export default function UserDashboardScreen({ navigation }: any) {
               </View>
               <View style={styles.roomInfo}>
                 <View style={styles.roomNumberRow}>
-                  <Text style={styles.roomNumber}>Room 101</Text>
+                  <Text style={styles.roomNumber}>Room {accommodation.roomNumber}</Text>
                   <View style={styles.badge}>
-                    <Text style={styles.badgeText}>AC Double</Text>
+                    <Text style={styles.badgeText}>{accommodation.roomType}</Text>
                   </View>
                 </View>
-                <Text style={styles.bedNumber}>Bed A • 1st Floor</Text>
+                <Text style={styles.bedNumber}>Bed {accommodation.bed} • Floor {accommodation.floor}</Text>
               </View>
             </View>
 
-            <View style={styles.divider} />
+            {roommates.length > 0 && (
+              <>
+                <View style={styles.divider} />
 
-            <View style={styles.roommatesSection}>
-              <View style={styles.roommatesHeader}>
-                <Users color={colors.textSecondary} size={16} />
-                <Text style={styles.roommatesLabel}>Your Roommate</Text>
-              </View>
-              <View style={styles.roommateRow}>
-                <View style={styles.roommateAvatar}>
-                  <Text style={styles.roommateAvatarText}>A</Text>
+                <View style={styles.roommatesSection}>
+                  <View style={styles.roommatesHeader}>
+                    <Users color={colors.textSecondary} size={16} />
+                    <Text style={styles.roommatesLabel}>Your Roommate{roommates.length > 1 ? 's' : ''}</Text>
+                  </View>
+                  {roommates.map((roommate: any) => (
+                    <View key={roommate.id} style={[styles.roommateRow, { marginBottom: 12 }]}>
+                      <View style={styles.roommateAvatar}>
+                        <Text style={styles.roommateAvatarText}>{getInitials(roommate.name)}</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.roommateName}>{roommate.name}</Text>
+                        <Text style={styles.roommateCourse}>{roommate.course}</Text>
+                      </View>
+                    </View>
+                  ))}
                 </View>
-                <View>
-                  <Text style={styles.roommateName}>Amit Patel</Text>
-                  <Text style={styles.roommateCourse}>B.Tech • 2nd Year</Text>
-                </View>
-              </View>
-            </View>
+              </>
+            )}
           </View>
 
           {/* Quick Actions */}
@@ -198,45 +325,49 @@ export default function UserDashboardScreen({ navigation }: any) {
             <TouchableOpacity 
               style={styles.actionCard} 
               activeOpacity={0.8}
-              onPress={() => navigation.navigate('GatePass')}>
+              onPress={() => navigation.navigate('VisitorRequests')}>
               <View style={[styles.actionIconBox, { backgroundColor: colors.warning + '15' }]}>
                 <User color={colors.warning} size={24} />
               </View>
-              <Text style={styles.actionTitle}>Gate{'\n'}Pass</Text>
+              <Text style={styles.actionTitle}>Visitor{'\n'}Request</Text>
             </TouchableOpacity>
           </View>
 
           {/* Recent Notices */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Recent Notices</Text>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('NoticeBoard')}>
-              <Text style={styles.seeAllText}>View Board</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.noticesList}>
-            {notices.map((notice) => (
-              <TouchableOpacity key={notice.id} style={styles.noticeCard} activeOpacity={0.8}>
-                <View style={styles.noticeHeader}>
-                  <View style={[
-                    styles.noticeIconBox,
-                    notice.priority === 'high' ? { backgroundColor: colors.dangerBg } : { backgroundColor: colors.primaryBg }
-                  ]}>
-                    <Bell 
-                      color={notice.priority === 'high' ? colors.danger : colors.primary} 
-                      size={18} 
-                      strokeWidth={2.5} 
-                    />
-                  </View>
-                  <Text style={styles.noticeDate}>{notice.date}</Text>
-                </View>
-                <Text style={styles.noticeTitle} numberOfLines={2}>{notice.title}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {notices.length > 0 && (
+            <>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Recent Notices</Text>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('NoticeBoard')}>
+                  <Text style={styles.seeAllText}>View Board</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.noticesList}>
+                {notices.map((notice: any) => (
+                  <TouchableOpacity key={notice.id} style={styles.noticeCard} activeOpacity={0.8}>
+                    <View style={styles.noticeHeader}>
+                      <View style={[
+                        styles.noticeIconBox,
+                        notice.priority === 'high' ? { backgroundColor: colors.dangerBg } : { backgroundColor: colors.primaryBg }
+                      ]}>
+                        <Bell 
+                          color={notice.priority === 'high' ? colors.danger : colors.primary} 
+                          size={18} 
+                          strokeWidth={2.5} 
+                        />
+                      </View>
+                      <Text style={styles.noticeDate}>{notice.date}</Text>
+                    </View>
+                    <Text style={styles.noticeTitle} numberOfLines={2}>{notice.title}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          )}
 
         </Animated.View>
       </ScrollView>
@@ -254,29 +385,28 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 240,
-    backgroundColor: colors.primary,
+    height: 260,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.2,
   },
   blob1: {
     width: 240,
     height: 240,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -100,
     right: -60,
   },
   blob2: {
     width: 180,
     height: 180,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 80,
     left: -40,
-    opacity: 0.15,
   },
   scrollContent: {
     paddingHorizontal: spacing.l,
@@ -291,30 +421,33 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
+    color: colors.textSecondary,
     fontWeight: '500',
     marginBottom: 2,
   },
   userName: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
   },
   profileAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   avatarText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.primary,
   },
   rentCard: {
     backgroundColor: '#FFFFFF',

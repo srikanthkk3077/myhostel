@@ -10,7 +10,11 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Share,
+  Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import {
   Plus,
   User,
@@ -22,9 +26,12 @@ import {
   CheckCircle2,
   Clock,
   IndianRupee,
+  Download,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { getMembers } from '../../../service/merchant';
 
 const { width } = Dimensions.get('window');
 
@@ -32,10 +39,13 @@ export default function StudentsListScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'active' | 'pending'>('all');
+  const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState<any[]>([]);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const blobAnim = useRef(new Animated.Value(0)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -65,47 +75,54 @@ export default function StudentsListScreen({ navigation }: any) {
         }),
       ]),
     ).start();
+
+    Animated.loop(
+      Animated.timing(shimmerAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    ).start();
   }, []);
+
+  const fetchMembers = async () => {
+    setLoading(true);
+    try {
+      const response = await getMembers();
+      if (response.status === 200 && response.data?.success) {
+        // Map backend response to match expected frontend structure if needed
+        const mappedStudents = (response.data.data || []).map((m: any) => ({
+          id: m._id,
+          name: m.name,
+          room: m.room,
+          status: m.computedStatus || m.status,
+          joinDate: m.joiningDate || '-',
+          balance: m.computedBalance !== undefined ? m.computedBalance : (m.monthlyRent - (m.securityDeposit || 0)),
+        }));
+        setStudents(mappedStudents);
+      }
+    } catch (error: any) {
+      console.error('Error fetching members:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchMembers();
+    }, [])
+  );
 
   const blobY = blobAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -20],
   });
 
-  const students = [
-    {
-      id: '1',
-      name: 'John Doe',
-      room: '101',
-      status: 'Active',
-      joinDate: '12 Jan 2026',
-      balance: 0,
-    },
-    {
-      id: '2',
-      name: 'Michael Smith',
-      room: '102',
-      status: 'Active',
-      joinDate: '05 Feb 2026',
-      balance: 0,
-    },
-    {
-      id: '3',
-      name: 'David Wilson',
-      room: '103',
-      status: 'Pending Fee',
-      joinDate: '10 Mar 2026',
-      balance: 4500,
-    },
-    {
-      id: '4',
-      name: 'Sarah Connor',
-      room: '104',
-      status: 'Active',
-      joinDate: '15 Mar 2026',
-      balance: 0,
-    },
-  ];
+  const shimmerTranslate = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-width, width],
+  });
 
   const filteredStudents = students.filter((student) => {
     const matchesSearch =
@@ -125,6 +142,48 @@ export default function StudentsListScreen({ navigation }: any) {
       .join('')
       .toUpperCase()
       .slice(0, 2);
+
+  const handleExport = async () => {
+    ReactNativeHapticFeedback.trigger('impactLight', {
+      enableVibrateFallback: true,
+      ignoreAndroidSystemSettings: false,
+    });
+    
+    // Generate CSV string
+    const header = "ID,Name,Room,Status,Join Date,Balance\n";
+    const rows = filteredStudents.map(s => `${s.id},${s.name},${s.room},${s.status},${s.joinDate},${s.balance}`).join('\n');
+    const csvContent = header + rows;
+    
+    try {
+      await Share.share({
+        message: csvContent,
+        title: 'Export_Students.csv',
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const renderSkeletonCard = (key: number) => (
+    <View key={`skeleton-${key}`} style={styles.studentCard}>
+      <View style={styles.cardContent}>
+        <View style={[styles.avatar, { backgroundColor: '#E2E8F0', overflow: 'hidden' }]}>
+           <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.4)', transform: [{ translateX: shimmerTranslate }] }]} />
+        </View>
+        <View style={styles.infoSection}>
+          <View style={{ width: '60%', height: 16, backgroundColor: '#E2E8F0', borderRadius: 4, marginBottom: 8, overflow: 'hidden' }}>
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.4)', transform: [{ translateX: shimmerTranslate }] }]} />
+          </View>
+          <View style={{ width: '40%', height: 12, backgroundColor: '#E2E8F0', borderRadius: 4, overflow: 'hidden' }}>
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.4)', transform: [{ translateX: shimmerTranslate }] }]} />
+          </View>
+        </View>
+        <View style={{ width: 40, height: 16, backgroundColor: '#E2E8F0', borderRadius: 4, overflow: 'hidden' }}>
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.4)', transform: [{ translateX: shimmerTranslate }] }]} />
+        </View>
+      </View>
+    </View>
+  );
 
   const renderStudentCard = (student: typeof students[0], index: number) => {
     const isActive = student.status === 'Active';
@@ -196,17 +255,22 @@ export default function StudentsListScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Header Background */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[styles.blob, styles.blob1, { transform: [{ translateY: blobY }] }]}
         />
         <Animated.View
           style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]}
         />
-      </View>
+      </LinearGradient>
 
       <ScrollView
         style={{ flex: 1, marginTop: insets.top }}
@@ -222,9 +286,14 @@ export default function StudentsListScreen({ navigation }: any) {
             <View style={styles.headerTitleRow}>
               <Text style={styles.title}>Members 👨‍🎓</Text>
             </View>
-            <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.7}>
-              <Filter color="#FFFFFF" size={20} strokeWidth={2.2} />
-            </TouchableOpacity>
+            <View style={styles.topBarActions}>
+              <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.7} onPress={handleExport}>
+                <Download color="#16A34A" size={20} strokeWidth={2.2} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.7}>
+                <Filter color="#16A34A" size={20} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Stats Overview Card */}
@@ -305,7 +374,10 @@ export default function StudentsListScreen({ navigation }: any) {
           </View>
 
           {/* Students List */}
-          {filteredStudents.map((student, idx) => renderStudentCard(student, idx))}
+          {loading 
+            ? [1, 2, 3, 4, 5].map(k => renderSkeletonCard(k))
+            : filteredStudents.map((student, idx) => renderStudentCard(student, idx))
+          }
 
           {/* Empty space for FAB */}
           <View style={{ height: 100 }} />
@@ -333,29 +405,28 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 260,
-    backgroundColor: colors.primary,
+    height: 280,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.2,
   },
   blob1: {
     width: 260,
     height: 260,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -120,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 100,
     left: -60,
-    opacity: 0.15,
   },
   scrollContent: {
     paddingHorizontal: spacing.l,
@@ -369,27 +440,36 @@ const styles = StyleSheet.create({
     marginBottom: spacing.l,
     paddingTop: spacing.s,
   },
+  topBarActions: {
+    flexDirection: 'row',
+    gap: spacing.s,
+  },
   titleLabel: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '500',
+    color: '#16A34A',
+    fontWeight: '700',
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
   },
   headerIconButton: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   overviewCard: {
     backgroundColor: colors.surface,

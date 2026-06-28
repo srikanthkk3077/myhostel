@@ -12,7 +12,7 @@ import AddVisitorScreen from '../screens/merchant/hostelservices/AddVisitorScree
 import AllServicesScreen from '../screens/merchant/hostelservices/AllServicesScreen';
 import ProfileScreen from '../screens/merchant/profile/ProfileScreen';
 import NotificationsScreen from '../screens/merchant/dashboard/NotificationsScreen';
-import GlobalSearchScreen from '../screens/merchant/dashboard/GlobalSearchScreen';
+import VisitorRequestsApprovalScreen from '../screens/merchant/hostelservices/VisitorRequestsApprovalScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -31,7 +31,7 @@ export default function DashboardStackNavigator() {
       <Stack.Screen name="AllServices" component={AllServicesScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
-      <Stack.Screen name="GlobalSearch" component={GlobalSearchScreen} />
+      <Stack.Screen name="VisitorRequestsApproval" component={VisitorRequestsApprovalScreen} />
     </Stack.Navigator>
   );
 }

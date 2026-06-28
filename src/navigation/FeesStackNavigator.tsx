@@ -6,6 +6,8 @@ import PaymentHistoryScreen from '../screens/merchant/fees/PaymentHistoryScreen'
 import ExpenseTrackingScreen from '../screens/merchant/fees/ExpenseTrackingScreen';
 import ExpenseDetailsScreen from '../screens/merchant/fees/ExpenseDetailsScreen';
 import AddExpenseScreen from '../screens/merchant/fees/AddExpenseScreen';
+import DuesListScreen from '../screens/merchant/fees/DuesListScreen';
+import TransactionDetailsScreen from '../screens/merchant/fees/TransactionDetailsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -15,9 +17,12 @@ export default function FeesStackNavigator() {
       <Stack.Screen name="FeesDashboard" component={PendingFeesScreen} />
       <Stack.Screen name="CollectFee" component={CollectFeeScreen} />
       <Stack.Screen name="PaymentHistory" component={PaymentHistoryScreen} />
+      <Stack.Screen name="TransactionDetails" component={TransactionDetailsScreen} />
       <Stack.Screen name="ExpenseTracking" component={ExpenseTrackingScreen} />
       <Stack.Screen name="ExpenseDetails" component={ExpenseDetailsScreen} />
       <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
+      <Stack.Screen name="DuesList" component={DuesListScreen} />
     </Stack.Navigator>
   );
 }
+

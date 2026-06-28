@@ -10,6 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -18,12 +20,20 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { getMe, updateProfile } from '../../service/merchant';
 
 export default function EditProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [course, setCourse] = useState('');
 
   useEffect(() => {
     Animated.parallel([
@@ -38,15 +48,73 @@ export default function EditProfileScreen({ navigation }: any) {
         useNativeDriver: true,
       }),
     ]).start();
+
+    const loadProfile = async () => {
+      try {
+        const response = await getMe();
+        if (response.status === 200 && response.data?.success) {
+          const user = response.data.data;
+          setName(user.name || '');
+          setEmail(user.email || '');
+          setPhone(user.phoneNumber || '');
+          setCourse(user.memberInfo ? 'B.Tech • 3rd Year' : 'Hostel Resident');
+        }
+      } catch (error) {
+        console.error('Failed to load profile details', error);
+        Alert.alert('Error', 'Failed to load profile details. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProfile();
   }, []);
   
-  const [name, setName] = useState('Rahul Sharma');
-  const [email, setEmail] = useState('rahul@example.com');
-  const [phone, setPhone] = useState('+91 98765 43210');
-  const [course, setCourse] = useState('B.Tech • 3rd Year');
+  const handleSave = async () => {
+    if (!name.trim()) {
+      return Alert.alert('Validation Error', 'Name cannot be empty.');
+    }
+    if (!email.trim()) {
+      return Alert.alert('Validation Error', 'Email cannot be empty.');
+    }
+    if (!phone.trim()) {
+      return Alert.alert('Validation Error', 'Phone number cannot be empty.');
+    }
 
-  const handleSave = () => {
-    navigation.goBack();
+    setSaving(true);
+    try {
+      const response = await updateProfile({
+        name,
+        email,
+        phoneNumber: phone,
+      });
+
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert('Success', 'Profile updated successfully!', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to update profile.');
+      }
+    } catch (error: any) {
+      console.error('Failed to save profile changes', error);
+      Alert.alert(
+        'Error',
+        error.response?.data?.message || 'Something went wrong while saving changes.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getInitials = (nameStr: string) => {
+    if (!nameStr) return 'U';
+    return nameStr
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
   };
 
   return (
@@ -74,80 +142,90 @@ export default function EditProfileScreen({ navigation }: any) {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }}>
-          
-          <View style={styles.avatarSection}>
-            <View style={styles.avatarWrapper}>
-              <LinearGradient
-                colors={['#14B8A6', '#0D9488']}
-                style={styles.avatarGradient}
-              >
-                <Text style={styles.avatarText}>RS</Text>
-              </LinearGradient>
-              <TouchableOpacity style={styles.cameraButton} activeOpacity={0.9}>
-                <Camera color="#FFFFFF" size={16} strokeWidth={2.5} />
-              </TouchableOpacity>
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#FFFFFF" style={{ marginTop: 80 }} />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <Animated.View
+            style={{
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }}>
+            
+            <View style={styles.avatarSection}>
+              <View style={styles.avatarWrapper}>
+                <LinearGradient
+                  colors={['#14B8A6', '#0D9488']}
+                  style={styles.avatarGradient}
+                >
+                  <Text style={styles.avatarText}>{getInitials(name)}</Text>
+                </LinearGradient>
+                <TouchableOpacity style={styles.cameraButton} activeOpacity={0.9}>
+                  <Camera color="#FFFFFF" size={16} strokeWidth={2.5} />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
 
-          <View style={styles.formCard}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Full Name</Text>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-              />
+            <View style={styles.formCard}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Full Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={name}
+                  onChangeText={setName}
+                />
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email Address</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Phone Number</Text>
+                <TextInput
+                  style={styles.input}
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Course Details</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: '#F1F5F9', color: colors.textSecondary }]}
+                  value={course}
+                  editable={false} // Student course details are usually managed by warden / registrar
+                />
+              </View>
             </View>
-            
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-            
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <TextInput
-                style={styles.input}
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-            </View>
-            
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Course Details</Text>
-              <TextInput
-                style={styles.input}
-                value={course}
-                onChangeText={setCourse}
-              />
-            </View>
-          </View>
 
-        </Animated.View>
-      </ScrollView>
+          </Animated.View>
+        </ScrollView>
+      )}
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.m }]}>
-        <TouchableOpacity activeOpacity={0.9} onPress={handleSave}>
+        <TouchableOpacity activeOpacity={0.9} onPress={handleSave} disabled={saving}>
           <LinearGradient
             colors={['#0D9488', '#0F766E']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            style={styles.saveButton}
+            style={[styles.saveButton, saving && { opacity: 0.7 }]}
           >
-            <Text style={styles.saveButtonText}>Save Changes</Text>
+            {saving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save Changes</Text>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </View>

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   StatusBar,
   Animated,
   Dimensions,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {
   Clock,
@@ -22,6 +24,8 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
+import { getMyComplaints } from '../../service/complaintService';
 
 const { width } = Dimensions.get('window');
 
@@ -44,12 +48,50 @@ const getCategoryColor = (category: string) => {
   }
 };
 
+const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+  const standardMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${String(d.getDate()).padStart(2, '0')} ${standardMonths[d.getMonth()]} ${d.getFullYear()}`;
+};
+
 export default function UserComplaintsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   
+  const [complaints, setComplaints] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const fabScale = useRef(new Animated.Value(0)).current;
+
+  const fetchComplaints = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const response = await getMyComplaints();
+      if (response.status === 200 && response.data?.success) {
+        setComplaints(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user complaints', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchComplaints(true);
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchComplaints(false);
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -73,19 +115,27 @@ export default function UserComplaintsScreen({ navigation }: any) {
     ]).start();
   }, []);
 
-  const complaints = [
-    { id: '1', title: 'AC not cooling', category: 'Electrical', date: '12 Jun 2026', status: 'In Progress' },
-    { id: '2', title: 'Bathroom tap leaking', category: 'Plumbing', date: '05 Jun 2026', status: 'Resolved' },
-    { id: '3', title: 'Room cleaning required', category: 'Cleaning', date: '28 May 2026', status: 'Resolved' },
-  ];
+  const activeIssuesCount = complaints.filter(c => c.status !== 'Resolved').length;
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading complaints…
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       
       {/* Premium Gradient Header */}
       <LinearGradient
-        colors={['#4F46E5', '#7C3AED', '#9333EA']}
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.headerBackground, { height: 260 + insets.top }]}
@@ -97,6 +147,9 @@ export default function UserComplaintsScreen({ navigation }: any) {
       <ScrollView 
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + spacing.l }]} 
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
       >
         <Animated.View
           style={{
@@ -107,54 +160,66 @@ export default function UserComplaintsScreen({ navigation }: any) {
           <View style={styles.headerTop}>
             <Text style={styles.headerTitle}>Complaints</Text>
             <View style={styles.headerStatsBadge}>
-              <Text style={styles.headerStatsText}>1 Active Issue</Text>
+              <Text style={styles.headerStatsText}>
+                {activeIssuesCount} Active Issue{activeIssuesCount !== 1 ? 's' : ''}
+              </Text>
             </View>
           </View>
 
           <View style={styles.cardsContainer}>
-            {complaints.map((comp, index) => (
-              <TouchableOpacity 
-                key={comp.id} 
-                style={styles.card} 
-                activeOpacity={0.9} 
-                onPress={() => navigation.navigate('ComplaintDetails', { id: comp.id })}
-              >
-                <View style={styles.cardHeader}>
-                  <View style={styles.categoryBadgeWrapper}>
-                    <View style={[styles.iconCircle, { backgroundColor: getCategoryColor(comp.category) }]}>
-                      {getCategoryIcon(comp.category)}
+            {complaints.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <AlertCircle color={colors.textTertiary} size={48} strokeWidth={1.5} />
+                <Text style={styles.emptyText}>No complaints raised yet.</Text>
+                <Text style={styles.emptySubText}>
+                  Tap the + button below to raise your first issue.
+                </Text>
+              </View>
+            ) : (
+              complaints.map((comp) => (
+                <TouchableOpacity 
+                  key={comp._id} 
+                  style={styles.card} 
+                  activeOpacity={0.9} 
+                  onPress={() => navigation.navigate('ComplaintDetails', { id: comp._id })}
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={styles.categoryBadgeWrapper}>
+                      <View style={[styles.iconCircle, { backgroundColor: getCategoryColor(comp.category) }]}>
+                        {getCategoryIcon(comp.category)}
+                      </View>
+                      <Text style={styles.categoryText}>{comp.category}</Text>
                     </View>
-                    <Text style={styles.categoryText}>{comp.category}</Text>
+                    
+                    <View style={[
+                      styles.statusBadge,
+                      comp.status === 'Resolved' ? styles.statusResolved : styles.statusProgress
+                    ]}>
+                      {comp.status === 'Resolved' ? (
+                        <CheckCircle2 color={colors.success} size={14} strokeWidth={2.5} />
+                      ) : (
+                        <Clock color="#F59E0B" size={14} strokeWidth={2.5} />
+                      )}
+                      <Text style={[
+                        styles.statusText,
+                        comp.status === 'Resolved' ? { color: colors.success } : { color: '#F59E0B' }
+                      ]}>
+                        {comp.status}
+                      </Text>
+                    </View>
                   </View>
                   
-                  <View style={[
-                    styles.statusBadge,
-                    comp.status === 'Resolved' ? styles.statusResolved : styles.statusProgress
-                  ]}>
-                    {comp.status === 'Resolved' ? (
-                      <CheckCircle2 color={colors.success} size={14} strokeWidth={2.5} />
-                    ) : (
-                      <Clock color="#F59E0B" size={14} strokeWidth={2.5} />
-                    )}
-                    <Text style={[
-                      styles.statusText,
-                      comp.status === 'Resolved' ? { color: colors.success } : { color: '#F59E0B' }
-                    ]}>
-                      {comp.status}
-                    </Text>
+                  <Text style={styles.cardTitle}>{comp.title}</Text>
+                  
+                  <View style={styles.cardFooter}>
+                    <Text style={styles.cardDate}>Reported: {formatDate(comp.createdAt)}</Text>
+                    <View style={styles.arrowBox}>
+                      <ChevronRight color={colors.primary} size={16} strokeWidth={3} />
+                    </View>
                   </View>
-                </View>
-                
-                <Text style={styles.cardTitle}>{comp.title}</Text>
-                
-                <View style={styles.cardFooter}>
-                  <Text style={styles.cardDate}>Reported: {comp.date}</Text>
-                  <View style={styles.arrowBox}>
-                    <ChevronRight color={colors.primary} size={16} strokeWidth={3} />
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              ))
+            )}
           </View>
 
         </Animated.View>
@@ -169,7 +234,7 @@ export default function UserComplaintsScreen({ navigation }: any) {
       ]}>
         <TouchableOpacity activeOpacity={0.9} onPress={() => navigation.navigate('RaiseComplaint')}>
           <LinearGradient
-            colors={['#7C3AED', '#4F46E5']}
+            colors={['#16A34A', '#15803D']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.fab}
@@ -201,7 +266,7 @@ const styles = StyleSheet.create({
     width: 250,
     height: 250,
     borderRadius: 125,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -50,
     right: -80,
   },
@@ -210,7 +275,7 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     borderRadius: 75,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 120,
     left: -30,
   },
@@ -228,19 +293,22 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
   },
   headerStatsBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   headerStatsText: {
-    color: '#FFFFFF',
+    color: colors.primary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -343,5 +411,31 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  emptyContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: spacing.xxl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 4,
+    marginTop: spacing.xl,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.text,
+    marginTop: spacing.m,
+    marginBottom: spacing.xs,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });

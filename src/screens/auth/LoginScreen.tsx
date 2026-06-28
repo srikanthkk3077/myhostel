@@ -11,6 +11,10 @@ import {
   Animated,
   Dimensions,
   Pressable,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import {
   Mail,
@@ -22,9 +26,15 @@ import {
   Shield,
   Sparkles,
   User,
+  X,
+  KeyRound,
+  CheckCircle2,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { loginUser, forgotPassword, resetPassword } from '../../service/hostelServices';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,6 +45,114 @@ export default function LoginScreen({ navigation }: any) {
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [accountType, setAccountType] = useState<'User' | 'merchant'>('User');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await loginUser({ email, password });
+      
+      if (response.status === 200 && response.data?.success) {
+        const role = response.data.user?.role || accountType;
+        if (response.data.token) {
+           await AsyncStorage.setItem('authToken', response.data.token);
+           await AsyncStorage.setItem('userRole', role);
+        }
+        if (role === 'merchant') {
+          navigation.replace('Dashboard');
+        } else {
+          navigation.replace('UserDashboard');
+        }
+      } else {
+        Alert.alert('Login Failed', response.data?.message || 'Invalid email or password');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Something went wrong');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Forgot Password Modal States
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetStep, setResetStep] = useState(1); // 1 = Request code, 2 = Verify & reset
+  const [resetOtp, setResetOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [devOtpHelper, setDevOtpHelper] = useState('');
+
+  const handleRequestOtp = async () => {
+    if (!forgotEmail.trim()) {
+      Alert.alert('Error', 'Please enter your email or phone number.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const response = await forgotPassword({ email: forgotEmail.trim() });
+      if (response.status === 200 && response.data?.success) {
+        if (response.data.otp) {
+          setDevOtpHelper(response.data.otp);
+        }
+        Alert.alert('Success', `Reset code generated!`);
+        setResetStep(2);
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to request reset code.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert('Error', err.response?.data?.message || 'Something went wrong.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetOtp.trim()) {
+      Alert.alert('Error', 'Please enter the 6-digit OTP code.');
+      return;
+    }
+    if (!newPassword || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in both password fields.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const response = await resetPassword({
+        email: forgotEmail.trim(),
+        otp: resetOtp.trim(),
+        newPassword: newPassword,
+      });
+
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert('Success', 'Password has been reset successfully! You can now log in.');
+        setForgotModalVisible(false);
+        setForgotEmail('');
+        setResetStep(1);
+        setResetOtp('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setDevOtpHelper('');
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to reset password.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert('Error', err.response?.data?.message || 'Something went wrong.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -98,10 +216,15 @@ export default function LoginScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Gradient Header Background */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[
             styles.blob,
@@ -116,26 +239,28 @@ export default function LoginScreen({ navigation }: any) {
             { transform: [{ translateY: blob2Y }] },
           ]}
         />
-        <View style={styles.glow} />
-      </View>
+      </LinearGradient>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              paddingTop: Platform.OS === 'ios' ? spacing.m + insets.top : spacing.xl,
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}>
+        <ScrollView
+          style={{ flex: 1, marginTop: insets.top }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled">
+          <Animated.View
+            style={[
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}>
           {/* Top Brand Section */}
           <View style={styles.brandSection}>
             <View style={styles.logoWrapper}>
               <View style={styles.logoInner}>
-                <Building2 color="#FFFFFF" size={28} strokeWidth={2.5} />
+                <Building2 color="#16A34A" size={28} strokeWidth={2.5} />
               </View>
               <View style={styles.sparkleBadge}>
                 <Sparkles color={colors.warning} size={14} strokeWidth={2.5} />
@@ -153,7 +278,7 @@ export default function LoginScreen({ navigation }: any) {
             </View>
 
             {/* Role Toggle */}
-            <View style={styles.roleToggleContainer}>
+            {/* <View style={styles.roleToggleContainer}>
               <TouchableOpacity
                 style={[styles.roleButton, accountType === 'User' && styles.roleButtonActive]}
                 activeOpacity={0.8}
@@ -168,11 +293,11 @@ export default function LoginScreen({ navigation }: any) {
                 <Building2 color={accountType === 'merchant' ? '#FFFFFF' : colors.textSecondary} size={18} strokeWidth={2.5} />
                 <Text style={[styles.roleText, accountType === 'merchant' && styles.roleTextActive]}>Hostel Owner</Text>
               </TouchableOpacity>
-            </View>
+            </View> */}
 
             {/* Email Input */}
             <View style={styles.fieldWrapper}>
-              <Text style={styles.label}>Email Address</Text>
+              <Text style={styles.label}>Email or Phone Number</Text>
               <Pressable
                 onPress={() => setFocusedField('email')}
                 style={[
@@ -192,13 +317,13 @@ export default function LoginScreen({ navigation }: any) {
                 </View>
                 <TextInput
                   style={styles.input}
-                  placeholder="you@example.com"
+                  placeholder="Enter email or phone number"
                   placeholderTextColor={colors.textTertiary}
                   value={email}
                   onChangeText={setEmail}
                   onFocus={() => setFocusedField('email')}
                   onBlur={() => setFocusedField(null)}
-                  keyboardType="email-address"
+                  keyboardType="default"
                   autoCapitalize="none"
                 />
               </Pressable>
@@ -208,7 +333,7 @@ export default function LoginScreen({ navigation }: any) {
             <View style={styles.fieldWrapper}>
               <View style={styles.passwordLabelRow}>
                 <Text style={styles.label}>Password</Text>
-                <TouchableOpacity activeOpacity={0.7}>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => setForgotModalVisible(true)}>
                   <Text style={styles.forgotText}>Forgot?</Text>
                 </TouchableOpacity>
               </View>
@@ -264,26 +389,27 @@ export default function LoginScreen({ navigation }: any) {
             <TouchableOpacity
               style={styles.loginButton}
               activeOpacity={0.85}
-              onPress={() => {
-                if (accountType === 'merchant') {
-                  navigation.replace('Dashboard');
-                } else {
-                  navigation.replace('UserDashboard');
-                }
-              }}>
+              disabled={isLoading}
+              onPress={handleLogin}>
               <View style={styles.buttonShine} />
-              <Text style={styles.loginButtonText}>Sign In</Text>
-              <View style={styles.buttonIconBox}>
-                <ArrowRight color={colors.primary} size={18} strokeWidth={2.5} />
-              </View>
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.loginButtonText}>Sign In</Text>
+                  <View style={styles.buttonIconBox}>
+                    <ArrowRight color={colors.primary} size={18} strokeWidth={2.5} />
+                  </View>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>New to MyHostel? </Text>
+            <Text style={styles.footerText}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Registration')}>
-              <Text style={styles.footerLink}>Create Account</Text>
+              <Text style={styles.footerLink}>Sign Up</Text>
             </TouchableOpacity>
           </View>
 
@@ -293,7 +419,171 @@ export default function LoginScreen({ navigation }: any) {
             <Text style={styles.trustText}>Secured with 256-bit encryption</Text>
           </View>
         </Animated.View>
+        </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Forgot Password Modal */}
+      <Modal
+        visible={forgotModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setForgotModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.modalKeyboardAvoiding}
+          >
+            <View style={styles.modalContent}>
+              {/* Modal Header */}
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Reset Password</Text>
+                <TouchableOpacity
+                  onPress={() => setForgotModalVisible(false)}
+                  style={styles.closeButton}
+                >
+                  <X color={colors.text} size={20} strokeWidth={2.5} />
+                </TouchableOpacity>
+              </View>
+
+              {resetStep === 1 ? (
+                /* Step 1: Request OTP code */
+                <View style={styles.modalBody}>
+                  <Text style={styles.modalInstructions}>
+                    Enter the email address or phone number associated with your account to request a password reset code.
+                  </Text>
+                  
+                  <View style={styles.fieldWrapper}>
+                    <Text style={styles.label}>Email / Phone Number</Text>
+                    <View style={styles.modalInputContainer}>
+                      <View style={styles.iconBox}>
+                        <Mail color={colors.textSecondary} size={18} strokeWidth={2.2} />
+                      </View>
+                      <TextInput
+                        style={styles.modalInput}
+                        placeholder="Enter email or phone number"
+                        placeholderTextColor={colors.textTertiary}
+                        value={forgotEmail}
+                        onChangeText={setForgotEmail}
+                        keyboardType="default"
+                        autoCapitalize="none"
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.modalButton, forgotLoading && { backgroundColor: colors.textSecondary }]}
+                    onPress={handleRequestOtp}
+                    disabled={forgotLoading}
+                    activeOpacity={0.85}
+                  >
+                    {forgotLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Text style={styles.modalButtonText}>Get Reset Code</Text>
+                        <ArrowRight color="#FFFFFF" size={18} strokeWidth={2.5} />
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* Step 2: Verify & reset */
+                <View style={styles.modalBody}>
+                  <Text style={styles.modalInstructions}>
+                    A password reset code has been generated. Enter the code and choose your new password.
+                  </Text>
+
+                  {devOtpHelper ? (
+                    <View style={styles.devOtpContainer}>
+                      <Text style={styles.devOtpLabel}>Development OTP Code Helper:</Text>
+                      <Text style={styles.devOtpCode}>{devOtpHelper}</Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.fieldWrapper}>
+                    <Text style={styles.label}>6-Digit OTP Code</Text>
+                    <View style={styles.modalInputContainer}>
+                      <View style={styles.iconBox}>
+                        <KeyRound color={colors.textSecondary} size={18} strokeWidth={2.2} />
+                      </View>
+                      <TextInput
+                        style={styles.modalInput}
+                        placeholder="Enter 6-digit code"
+                        placeholderTextColor={colors.textTertiary}
+                        value={resetOtp}
+                        onChangeText={setResetOtp}
+                        keyboardType="numeric"
+                        maxLength={6}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.fieldWrapper}>
+                    <Text style={styles.label}>New Password</Text>
+                    <View style={styles.modalInputContainer}>
+                      <View style={styles.iconBox}>
+                        <Lock color={colors.textSecondary} size={18} strokeWidth={2.2} />
+                      </View>
+                      <TextInput
+                        style={styles.modalInput}
+                        placeholder="Enter new password"
+                        placeholderTextColor={colors.textTertiary}
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                        secureTextEntry={true}
+                        autoCapitalize="none"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.fieldWrapper}>
+                    <Text style={styles.label}>Confirm New Password</Text>
+                    <View style={styles.modalInputContainer}>
+                      <View style={styles.iconBox}>
+                        <Lock color={colors.textSecondary} size={18} strokeWidth={2.2} />
+                      </View>
+                      <TextInput
+                        style={styles.modalInput}
+                        placeholder="Confirm new password"
+                        placeholderTextColor={colors.textTertiary}
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                        secureTextEntry={true}
+                        autoCapitalize="none"
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.modalButton, forgotLoading && { backgroundColor: colors.textSecondary }]}
+                    onPress={handleResetPassword}
+                    disabled={forgotLoading}
+                    activeOpacity={0.85}
+                  >
+                    {forgotLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Text style={styles.modalButtonText}>Reset Password</Text>
+                        <CheckCircle2 color="#FFFFFF" size={18} strokeWidth={2.5} />
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalBackLink}
+                    onPress={() => setResetStep(1)}
+                    disabled={forgotLoading}
+                  >
+                    <Text style={styles.modalBackLinkText}>Back to request code</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -308,44 +598,37 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: height * 0.42,
-    backgroundColor: colors.primary,
+    height: height * 0.44,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.25,
   },
   blob1: {
     width: 280,
     height: 280,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -100,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     bottom: -60,
     left: -60,
-    opacity: 0.2,
-  },
-  glow: {
-    position: 'absolute',
-    width: width,
-    height: 200,
-    bottom: 0,
-    backgroundColor: colors.primary,
-    opacity: 0.5,
   },
   keyboardView: {
     flex: 1,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: spacing.l,
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.m,
+    paddingTop: Platform.OS === 'ios' ? spacing.m : spacing.xl,
+    paddingBottom: spacing.xl,
   },
   brandSection: {
     alignItems: 'center',
@@ -359,11 +642,14 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   sparkleBadge: {
     position: 'absolute',
@@ -384,13 +670,13 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
     marginBottom: 4,
   },
   brandSubtitle: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
+    color: colors.textSecondary,
     fontWeight: '500',
     letterSpacing: 0.3,
   },
@@ -654,5 +940,122 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalKeyboardAvoiding: {
+    width: '100%',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: spacing.xl,
+    paddingBottom: spacing.xxl + 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.l,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalBody: {
+    gap: spacing.m,
+  },
+  modalInstructions: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: spacing.m,
+  },
+  modalInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingHorizontal: spacing.m,
+  },
+  modalInput: {
+    flex: 1,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 10,
+    fontSize: 15,
+    color: colors.text,
+    marginLeft: spacing.s,
+  },
+  modalButton: {
+    backgroundColor: colors.primary,
+    height: 56,
+    borderRadius: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: spacing.m,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalBackLink: {
+    alignItems: 'center',
+    marginTop: spacing.m,
+    paddingVertical: spacing.s,
+  },
+  modalBackLinkText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  devOtpContainer: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#D97706',
+    borderRadius: 12,
+    padding: spacing.m,
+    marginBottom: spacing.m,
+    alignItems: 'center',
+  },
+  devOtpLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#D97706',
+    marginBottom: 4,
+  },
+  devOtpCode: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#D97706',
+    letterSpacing: 4,
   },
 });

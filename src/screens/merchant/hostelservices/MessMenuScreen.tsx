@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -18,31 +20,97 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { getMessMenu } from '../../../service/menuService';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function MessMenuScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [activeDay, setActiveDay] = useState('Mon');
+  const [menuData, setMenuData] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Dummy Menu Data
-  const menuData: any = {
-    Mon: [
-      { id: '1', type: 'Breakfast', time: '07:30 AM - 09:30 AM', items: 'Idli, Vada, Sambar, Chutney, Tea/Coffee', icon: Coffee, color: colors.warning },
-      { id: '2', type: 'Lunch', time: '12:30 PM - 02:30 PM', items: 'Roti, Dal Tadka, Paneer Butter Masala, Rice, Salad', icon: Sun, color: colors.primary },
-      { id: '3', type: 'Snacks', time: '05:00 PM - 06:00 PM', items: 'Samosa, Green Chutney, Tea', icon: Sunset, color: colors.info },
-      { id: '4', type: 'Dinner', time: '08:00 PM - 10:00 PM', items: 'Roti, Mix Veg, Dal Fry, Rice, Gulab Jamun', icon: Moon, color: colors.success },
-    ],
-    Tue: [
-      { id: '1', type: 'Breakfast', time: '07:30 AM - 09:30 AM', items: 'Poha, Jalebi, Tea/Coffee', icon: Coffee, color: colors.warning },
-      { id: '2', type: 'Lunch', time: '12:30 PM - 02:30 PM', items: 'Rajma Chawal, Roti, Curd, Salad', icon: Sun, color: colors.primary },
-      { id: '3', type: 'Snacks', time: '05:00 PM - 06:00 PM', items: 'Bread Pakoda, Tea', icon: Sunset, color: colors.info },
-      { id: '4', type: 'Dinner', time: '08:00 PM - 10:00 PM', items: 'Roti, Bhindi Masala, Dal, Jeera Rice', icon: Moon, color: colors.success },
-    ],
-    // Add other days as needed...
+  const fetchMenu = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const response = await getMessMenu();
+      if (response.status === 200 && response.data?.success) {
+        const dbMenuArray = response.data.data || [];
+        
+        // Map database list to UI structure
+        const mapped: any = {};
+        const mealsConfig = [
+          { type: 'Breakfast', time: '07:30 AM - 09:30 AM', icon: Coffee, color: colors.warning, key: 'breakfast' },
+          { type: 'Lunch', time: '12:30 PM - 02:30 PM', icon: Sun, color: colors.primary, key: 'lunch' },
+          { type: 'Snacks', time: '05:00 PM - 06:00 PM', icon: Sunset, color: colors.info, key: 'snacks' },
+          { type: 'Dinner', time: '08:00 PM - 10:00 PM', icon: Moon, color: colors.success, key: 'dinner' },
+        ];
+
+        DAYS.forEach((day) => {
+          const dayEntry = dbMenuArray.find((m: any) => m.day === day) || {};
+          mapped[day] = mealsConfig.map((meal, idx) => ({
+            id: String(idx + 1),
+            type: meal.type,
+            time: meal.time,
+            items: dayEntry[meal.key] || 'No items scheduled',
+            icon: meal.icon,
+            color: meal.color,
+          }));
+        });
+
+        setMenuData(mapped);
+      }
+    } catch (error) {
+      console.error('Failed to fetch mess menu', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  const todayMenu = menuData[activeDay] || menuData['Mon'];
+  useFocusEffect(
+    useCallback(() => {
+      fetchMenu(true);
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchMenu(false);
+  };
+
+  const todayMenu = menuData[activeDay] || [];
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading menu schedule…
+        </Text>
+      </View>
+    );
+  }
+
+  const navigateToEdit = () => {
+    const rawBreakfast = todayMenu.find((m: any) => m.type === 'Breakfast')?.items || '';
+    const rawLunch = todayMenu.find((m: any) => m.type === 'Lunch')?.items || '';
+    const rawSnacks = todayMenu.find((m: any) => m.type === 'Snacks')?.items || '';
+    const rawDinner = todayMenu.find((m: any) => m.type === 'Dinner')?.items || '';
+
+    navigation.navigate('EditMenu', {
+      day: activeDay,
+      menu: {
+        breakfast: rawBreakfast === 'No items scheduled' ? '' : rawBreakfast,
+        lunch: rawLunch === 'No items scheduled' ? '' : rawLunch,
+        snacks: rawSnacks === 'No items scheduled' ? '' : rawSnacks,
+        dinner: rawDinner === 'No items scheduled' ? '' : rawDinner,
+      }
+    });
+  };
 
   return (
     <View style={styles.container}>
@@ -61,7 +129,7 @@ export default function MessMenuScreen({ navigation }: any) {
           </View>
           <TouchableOpacity
             style={styles.editButton}
-            onPress={() => navigation.navigate('EditMenu', { day: activeDay })}
+            onPress={navigateToEdit}
             activeOpacity={0.7}>
             <Edit2 color={colors.primary} size={20} strokeWidth={2.5} />
           </TouchableOpacity>
@@ -92,7 +160,13 @@ export default function MessMenuScreen({ navigation }: any) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
+      >
         <View style={styles.menuHeader}>
           <CalendarDays color={colors.textSecondary} size={20} strokeWidth={2.5} />
           <Text style={styles.menuDateText}>{activeDay}'s Menu</Text>

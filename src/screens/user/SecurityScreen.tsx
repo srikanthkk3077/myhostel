@@ -10,6 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -19,6 +21,7 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { changePassword } from '../../service/merchant';
 
 export default function SecurityScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -47,9 +50,41 @@ export default function SecurityScreen({ navigation }: any) {
   
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
-  const handleSave = () => {
-    navigation.goBack();
+  const handleSave = async () => {
+    if (!currentPassword.trim()) {
+      return Alert.alert('Validation Error', 'Please enter your current password.');
+    }
+    if (!newPassword.trim()) {
+      return Alert.alert('Validation Error', 'Please enter your new password.');
+    }
+    if (newPassword.length < 6) {
+      return Alert.alert('Validation Error', 'New password must be at least 6 characters long.');
+    }
+    if (newPassword !== confirmPassword) {
+      return Alert.alert('Validation Error', 'New password and confirm password do not match.');
+    }
+
+    setUpdating(true);
+    try {
+      const response = await changePassword({ currentPassword, newPassword });
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert('Success', 'Password updated successfully!', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to update password.');
+      }
+    } catch (error: any) {
+      console.error('Failed to change password', error);
+      Alert.alert(
+        'Error',
+        error.response?.data?.message || 'Something went wrong while updating password.'
+      );
+    } finally {
+      setUpdating(false);
+    }
   };
 
   return (
@@ -142,14 +177,18 @@ export default function SecurityScreen({ navigation }: any) {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.m }]}>
-        <TouchableOpacity activeOpacity={0.9} onPress={handleSave}>
+        <TouchableOpacity activeOpacity={0.9} onPress={handleSave} disabled={updating}>
           <LinearGradient
             colors={['#0D9488', '#0F766E']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            style={styles.saveButton}
+            style={[styles.saveButton, updating && { opacity: 0.7 }]}
           >
-            <Text style={styles.saveButtonText}>Update Password</Text>
+            {updating ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.saveButtonText}>Update Password</Text>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </View>

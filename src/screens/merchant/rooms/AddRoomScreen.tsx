@@ -12,6 +12,8 @@ import {
   Animated,
   Dimensions,
   Pressable,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -29,6 +31,8 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { createRoom } from '../../../service/merchant';
 
 const { width, height } = Dimensions.get('window');
 
@@ -40,6 +44,7 @@ export default function AddRoomScreen({ navigation }: any) {
   const [floor, setFloor] = useState('');
   const [price, setPrice] = useState('');
   const [isAC, setIsAC] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -76,8 +81,36 @@ export default function AddRoomScreen({ navigation }: any) {
     return map[roomType] || 2;
   };
 
-  const handleSave = () => {
-    navigation.goBack();
+  const handleSave = async () => {
+    if (!roomNumber || !floor || !price) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const payload = {
+        roomNumber,
+        floor: parseInt(floor, 10) || floor,
+        pricePerMonth: parseInt(price, 10) || 0,
+        roomType: isAC ? `${roomType} (AC)` : `${roomType} (Non-AC)`,
+        roomCapacity: getBedCount(),
+      };
+      
+      const response = await createRoom(payload as any);
+      
+      if (response.status === 201 && response.data?.success) {
+        Alert.alert('Success', 'Room created successfully', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      } else {
+        Alert.alert('Failed', response.data?.message || 'Something went wrong');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Something went wrong');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const renderInput = (
@@ -112,17 +145,22 @@ export default function AddRoomScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Animated Header */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[styles.blob, styles.blob1, { transform: [{ translateY: blobY }] }]}
         />
         <Animated.View
           style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]}
         />
-      </View>
+      </LinearGradient>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -142,7 +180,7 @@ export default function AddRoomScreen({ navigation }: any) {
               <TouchableOpacity
                 style={styles.iconButton}
                 onPress={() => navigation.goBack()}>
-                <ArrowLeft color="#FFFFFF" size={20} strokeWidth={2.5} />
+                <ArrowLeft color="#16A34A" size={20} strokeWidth={2.5} />
               </TouchableOpacity>
               <Text style={styles.topBarTitle}>Add Room</Text>
               <View style={{ width: 42 }} />
@@ -151,7 +189,7 @@ export default function AddRoomScreen({ navigation }: any) {
             {/* Hero Icon */}
             <View style={styles.heroSection}>
               <View style={styles.heroIconBox}>
-                <Home color="#FFFFFF" size={36} strokeWidth={2.5} />
+                <Home color="#16A34A" size={36} strokeWidth={2.5} />
                 <View style={styles.sparkleBadge}>
                   <Sparkles color={colors.warning} size={12} strokeWidth={2.5} />
                 </View>
@@ -290,10 +328,17 @@ export default function AddRoomScreen({ navigation }: any) {
             <TouchableOpacity
               style={styles.saveButton}
               activeOpacity={0.85}
+              disabled={isLoading}
               onPress={handleSave}>
               <View style={styles.saveButtonShine} />
-              <Save color="#FFFFFF" size={18} strokeWidth={2.5} />
-              <Text style={styles.saveButtonText}>Save Room</Text>
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Save color="#FFFFFF" size={18} strokeWidth={2.5} />
+                  <Text style={styles.saveButtonText}>Save Room</Text>
+                </>
+              )}
             </TouchableOpacity>
 
             <View style={{ height: 40 }} />
@@ -314,29 +359,28 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 300,
-    backgroundColor: colors.primary,
+    height: 340,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.2,
   },
   blob1: {
     width: 260,
     height: 260,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -120,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 100,
     left: -60,
-    opacity: 0.15,
   },
   keyboardView: {
     flex: 1,
@@ -357,16 +401,19 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   topBarTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.3,
   },
   heroSection: {
@@ -378,11 +425,14 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
     marginBottom: spacing.m,
     position: 'relative',
   },
@@ -405,13 +455,13 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
     marginBottom: 4,
   },
   heroSubtitle: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   formCard: {

@@ -1,14 +1,14 @@
-export const colors = {
-  primary: '#4F46E5',
-  primaryBg: '#EEF2FF',
-  primaryLight: '#818CF8',
+const lightColors = {
+  primary: '#2e8451ff',
+  primaryBg: '#DCFCE7',
+  primaryLight: '#4ADE80',
   secondary: '#10B981',
-  background: '#F9FAFB', // Much lighter, cleaner background
+  background: '#F9FAFB',
   surface: '#FFFFFF',
   text: '#111827',
   textSecondary: '#6B7280',
   textTertiary: '#9CA3AF',
-  border: '#F3F4F6', // Softer border
+  border: '#F3F4F6',
   danger: '#EF4444',
   dangerBg: '#FEF2F2',
   warning: '#F59E0B',
@@ -18,6 +18,30 @@ export const colors = {
   info: '#3B82F6',
   infoBg: '#EFF6FF',
 };
+
+const darkColors = {
+  primary: '#4ADE80', // Brighter green for dark mode
+  primaryBg: '#14532d',
+  primaryLight: '#2e8451ff',
+  secondary: '#34D399',
+  background: '#111827', // Dark background
+  surface: '#1F2937', // Slightly lighter dark for cards
+  text: '#F9FAFB', // Light text
+  textSecondary: '#9CA3AF',
+  textTertiary: '#6B7280',
+  border: '#374151',
+  danger: '#F87171',
+  dangerBg: '#7F1D1D',
+  warning: '#FBBF24',
+  warningBg: '#78350F',
+  success: '#34D399',
+  successBg: '#064E3B',
+  info: '#60A5FA',
+  infoBg: '#1E3A8A',
+};
+
+// TODO: Integrate a ThemeProvider to dynamically swap between lightColors and darkColors using useColorScheme()
+export const colors = lightColors;
 
 export const spacing = {
   xs: 4,

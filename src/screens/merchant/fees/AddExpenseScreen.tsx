@@ -9,12 +9,13 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import {
   ArrowLeft,
   IndianRupee,
   FileText,
-  Calendar,
   Zap,
   Wrench,
   ShoppingCart,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { addExpense } from '../../../service/merchant';
 
 export default function AddExpenseScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -30,12 +32,42 @@ export default function AddExpenseScreen({ navigation }: any) {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Utility');
+  const [loading, setLoading] = useState(false);
 
   const categories = [
     { id: 'Utility', icon: Zap, color: colors.warning },
     { id: 'Maintenance', icon: Wrench, color: colors.info },
     { id: 'Supplies', icon: ShoppingCart, color: colors.primary },
   ];
+
+  const handleSave = async () => {
+    if (!title.trim() || !amount.trim()) {
+      // Basic validation
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await addExpense({
+        title: title.trim(),
+        amount: Number(amount),
+        category: selectedCategory,
+        description: description.trim(),
+      });
+
+      if (response.status === 201) {
+        ReactNativeHapticFeedback.trigger('notificationSuccess', {
+          enableVibrateFallback: true,
+          ignoreAndroidSystemSettings: false,
+        });
+        navigation.goBack();
+      }
+    } catch (error) {
+      console.error('Error adding expense:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const renderInput = (
     label: string,
@@ -71,7 +103,8 @@ export default function AddExpenseScreen({ navigation }: any) {
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            disabled={loading}>
             <ArrowLeft color={colors.text} size={24} strokeWidth={2.5} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Record Expense</Text>
@@ -86,10 +119,13 @@ export default function AddExpenseScreen({ navigation }: any) {
           
           <View style={styles.formCard}>
             
-            {renderInput('Expense Title', FileText, 'e.g. Electricity Bill', title, setTitle)}
+            {renderInput('Expense Title', FileText, 'e.g. Electricity Bill', title, setTitle, {
+              editable: !loading,
+            })}
             
             {renderInput('Amount', IndianRupee, 'e.g. 1500', amount, setAmount, {
               keyboardType: 'numeric',
+              editable: !loading,
             })}
 
             <View style={styles.fieldWrapper}>
@@ -102,7 +138,8 @@ export default function AddExpenseScreen({ navigation }: any) {
                       key={cat.id}
                       style={[styles.categoryOption, isActive && { backgroundColor: cat.color + '20', borderColor: cat.color }]}
                       activeOpacity={0.8}
-                      onPress={() => setSelectedCategory(cat.id)}>
+                      onPress={() => setSelectedCategory(cat.id)}
+                      disabled={loading}>
                       <cat.icon color={isActive ? cat.color : colors.textSecondary} size={20} strokeWidth={2.5} />
                       <Text style={[styles.categoryText, isActive && { color: cat.color, fontWeight: '700' }]}>
                         {cat.id}
@@ -116,13 +153,25 @@ export default function AddExpenseScreen({ navigation }: any) {
             {renderInput('Description', AlignLeft, 'Optional details about this expense...', description, setDescription, {
               multiline: true,
               numberOfLines: 4,
+              editable: !loading,
             })}
 
           </View>
 
-          <TouchableOpacity style={styles.saveButton} activeOpacity={0.8} onPress={() => navigation.goBack()}>
+          <TouchableOpacity 
+            style={[
+              styles.saveButton,
+              (!title.trim() || !amount.trim() || loading) && styles.saveButtonDisabled
+            ]} 
+            activeOpacity={0.8} 
+            onPress={handleSave}
+            disabled={!title.trim() || !amount.trim() || loading}>
             <View style={styles.saveButtonShine} />
-            <Text style={styles.saveButtonText}>Add Expense</Text>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.saveButtonText}>Add Expense</Text>
+            )}
           </TouchableOpacity>
           
           <View style={{ height: 40 }} />
@@ -194,7 +243,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-start', // For multiline support
+    alignItems: 'flex-start',
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
     paddingHorizontal: spacing.s,
@@ -250,6 +299,9 @@ const styles = StyleSheet.create({
     elevation: 8,
     position: 'relative',
     overflow: 'hidden',
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
   },
   saveButtonShine: {
     position: 'absolute',

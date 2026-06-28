@@ -8,6 +8,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -19,19 +20,41 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { updateMessMenu } from '../../../service/menuService';
 
 export default function EditMenuScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const { day } = route.params || { day: 'Mon' };
+  const { day, menu = {} } = route.params || { day: 'Mon', menu: {} };
 
-  // Dummy State for editing
-  const [breakfast, setBreakfast] = useState('Idli, Vada, Sambar, Chutney, Tea/Coffee');
-  const [lunch, setLunch] = useState('Roti, Dal Tadka, Paneer Butter Masala, Rice, Salad');
-  const [snacks, setSnacks] = useState('Samosa, Green Chutney, Tea');
-  const [dinner, setDinner] = useState('Roti, Mix Veg, Dal Fry, Rice, Gulab Jamun');
+  // State for editing
+  const [breakfast, setBreakfast] = useState(menu.breakfast || '');
+  const [lunch, setLunch] = useState(menu.lunch || '');
+  const [snacks, setSnacks] = useState(menu.snacks || '');
+  const [dinner, setDinner] = useState(menu.dinner || '');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSave = () => {
-    navigation.goBack();
+  const handleSave = async () => {
+    setSubmitting(true);
+    try {
+      const response = await updateMessMenu(day, {
+        breakfast,
+        lunch,
+        snacks,
+        dinner,
+      });
+
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert('Success', `${day}'s menu updated successfully!`);
+        navigation.goBack();
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to update menu');
+      }
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const renderInput = (
@@ -76,8 +99,9 @@ export default function EditMenuScreen({ navigation, route }: any) {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit {day}'s Menu</Text>
           <TouchableOpacity
-            style={styles.saveIconButton}
+            style={[styles.saveIconButton, submitting && { backgroundColor: colors.textSecondary }]}
             onPress={handleSave}
+            disabled={submitting}
             activeOpacity={0.8}>
             <Save color="#FFFFFF" size={18} strokeWidth={2.5} />
           </TouchableOpacity>
@@ -94,9 +118,16 @@ export default function EditMenuScreen({ navigation, route }: any) {
           {renderInput('Snacks', '05:00 PM - 06:00 PM', Sunset, colors.info, snacks, setSnacks)}
           {renderInput('Dinner', '08:00 PM - 10:00 PM', Moon, colors.success, dinner, setDinner)}
 
-          <TouchableOpacity style={styles.saveButton} activeOpacity={0.85} onPress={handleSave}>
+          <TouchableOpacity 
+            style={[styles.saveButton, submitting && { backgroundColor: colors.textSecondary }]} 
+            activeOpacity={0.85} 
+            onPress={handleSave}
+            disabled={submitting}
+          >
             <Save color="#FFFFFF" size={18} strokeWidth={2.5} />
-            <Text style={styles.saveButtonText}>Update Menu</Text>
+            <Text style={styles.saveButtonText}>
+              {submitting ? 'Updating...' : 'Update Menu'}
+            </Text>
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />

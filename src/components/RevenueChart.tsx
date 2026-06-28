@@ -3,24 +3,47 @@ import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { colors, spacing, typography } from '../theme/colors';
 
-export default function RevenueChart() {
-  const chartData = [
-    { value: 15000, label: 'Jan' },
-    { value: 22000, label: 'Feb' },
-    { value: 18000, label: 'Mar' },
-    { value: 26000, label: 'Apr' },
-    { value: 32000, label: 'May' },
-    { value: 45000, label: 'Jun' },
-  ];
+interface ChartDataPoint {
+  value: number;
+  label: string;
+}
+
+interface RevenueChartProps {
+  /** Array of { value, label } for the last N months */
+  data?: ChartDataPoint[];
+  /** Current month's revenue to show in the header */
+  currentRevenue?: number;
+}
+
+const formatCurrency = (amount: number): string => {
+  if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
+  if (amount >= 1000) return `₹${(amount / 1000).toFixed(0)}K`;
+  return `₹${amount}`;
+};
+
+export default function RevenueChart({ data, currentRevenue }: RevenueChartProps) {
+  // Fallback to zeros if no data yet (avoids dummy data)
+  const chartData: ChartDataPoint[] = data && data.length > 0
+    ? data
+    : [
+        { value: 0, label: 'Jan' },
+        { value: 0, label: 'Feb' },
+        { value: 0, label: 'Mar' },
+        { value: 0, label: 'Apr' },
+        { value: 0, label: 'May' },
+        { value: 0, label: 'Jun' },
+      ];
+
+  const displayRevenue = currentRevenue !== undefined ? currentRevenue : 0;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Revenue Trend</Text>
-          <Text style={styles.subtitle}>Current vs Expected</Text>
+          <Text style={styles.subtitle}>Last 6 months performance</Text>
         </View>
-        <Text style={styles.currentRevenue}>$45,000</Text>
+        <Text style={styles.currentRevenue}>{formatCurrency(displayRevenue)}</Text>
       </View>
       <View style={styles.chartContainer}>
         <LineChart

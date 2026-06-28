@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,20 +6,78 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { ArrowLeft, Plus, Zap, Droplets, PenTool as Tool, ShoppingCart } from 'lucide-react-native';
+import { ArrowLeft, Plus, Zap, Droplets, PenTool as Tool, ShoppingCart, Receipt } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getExpenses } from '../../../service/merchant';
+import { useFocusEffect } from '@react-navigation/native';
+
+interface Expense {
+  id: string;
+  title: string;
+  category: string;
+  amount: number;
+  date: string;
+}
+
+interface SummarySegment {
+  category: string;
+  amount: number;
+  ratio: number;
+}
+
+interface ExpenseSummary {
+  totalAmount: number;
+  segments: SummarySegment[];
+}
 
 export default function ExpenseTrackingScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, segments: [] });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const expenses = [
-    { id: '1', title: 'Electricity Bill', category: 'Utility', amount: 12500, date: '15 Jun 2026', icon: Zap, color: colors.warning },
-    { id: '2', title: 'Water Tanker', category: 'Utility', amount: 3000, date: '14 Jun 2026', icon: Droplets, color: colors.info },
-    { id: '3', title: 'Plumbing Repair', category: 'Maintenance', amount: 1500, date: '10 Jun 2026', icon: Tool, color: colors.danger },
-    { id: '4', title: 'Groceries', category: 'Supplies', amount: 8500, date: '05 Jun 2026', icon: ShoppingCart, color: colors.primary },
-  ];
+  const fetchExpensesData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+
+    try {
+      const response = await getExpenses();
+      if (response.status === 200 && response.data?.success) {
+        setExpenses(response.data.data.expenses || []);
+        setSummary(response.data.data.summary || { totalAmount: 0, segments: [] });
+      }
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchExpensesData();
+    }, [])
+  );
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'Utility':
+        return { icon: Zap, color: colors.warning };
+      case 'Maintenance':
+        return { icon: Tool, color: colors.info };
+      case 'Supplies':
+        return { icon: ShoppingCart, color: colors.primary };
+      default:
+        return { icon: Receipt, color: colors.textSecondary };
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -37,54 +95,89 @@ export default function ExpenseTrackingScreen({ navigation }: any) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Expenses (This Month)</Text>
-          <Text style={styles.summaryAmount}>₹25,500</Text>
-          <View style={styles.summaryBar}>
-            <View style={[styles.summarySegment, { flex: 3, backgroundColor: colors.warning }]} />
-            <View style={[styles.summarySegment, { flex: 1, backgroundColor: colors.info }]} />
-            <View style={[styles.summarySegment, { flex: 2, backgroundColor: colors.primary }]} />
-          </View>
-          <View style={styles.legendRow}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: colors.warning }]} />
-              <Text style={styles.legendText}>Utility</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: colors.info }]} />
-              <Text style={styles.legendText}>Maintenance</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-              <Text style={styles.legendText}>Supplies</Text>
-            </View>
-          </View>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading expenses…</Text>
         </View>
-
-        <Text style={styles.sectionTitle}>Recent Expenses</Text>
-        <View style={styles.listContainer}>
-          {expenses.map((exp) => (
-            <TouchableOpacity 
-              key={exp.id} 
-              style={styles.expCard}
-              activeOpacity={0.7}
-              onPress={() => navigation.navigate('ExpenseDetails', { id: exp.id })}>
-              <View style={styles.expLeft}>
-                <View style={[styles.iconBox, { backgroundColor: exp.color + '15' }]}>
-                  <exp.icon color={exp.color} size={20} />
-                </View>
-                <View>
-                  <Text style={styles.expTitle}>{exp.title}</Text>
-                  <Text style={styles.expDate}>{exp.date} • {exp.category}</Text>
-                </View>
+      ) : (
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => fetchExpensesData(true)}
+              tintColor={colors.primary}
+            />
+          }
+        >
+          
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Total Expenses (This Month)</Text>
+            <Text style={styles.summaryAmount}>₹{summary.totalAmount.toLocaleString('en-IN')}</Text>
+            {summary.totalAmount > 0 && summary.segments.length > 0 && (
+              <View style={styles.summaryBar}>
+                {summary.segments.map((segment, index) => {
+                  const { color } = getCategoryIcon(segment.category);
+                  return (
+                    <View 
+                      key={index}
+                      style={[styles.summarySegment, { flex: segment.ratio, backgroundColor: color }]} 
+                    />
+                  );
+                })}
               </View>
-              <Text style={styles.expAmount}>-₹{exp.amount}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
+            )}
+            <View style={styles.legendRow}>
+              {summary.segments.map((segment, index) => {
+                 const { color } = getCategoryIcon(segment.category);
+                 return (
+                   <View key={index} style={styles.legendItem}>
+                     <View style={[styles.legendDot, { backgroundColor: color }]} />
+                     <Text style={styles.legendText}>{segment.category}</Text>
+                   </View>
+                 );
+              })}
+            </View>
+          </View>
+
+          <Text style={styles.sectionTitle}>Recent Expenses</Text>
+          {expenses.length === 0 ? (
+             <View style={styles.emptyContainer}>
+               <Receipt color={colors.textTertiary} size={48} strokeWidth={1.5} />
+               <Text style={styles.emptyTitle}>No Expenses Yet</Text>
+               <Text style={styles.emptySubtitle}>
+                 Record your hostel expenses to track them here.
+               </Text>
+             </View>
+          ) : (
+            <View style={styles.listContainer}>
+              {expenses.map((exp) => {
+                const { icon: Icon, color } = getCategoryIcon(exp.category);
+                return (
+                  <TouchableOpacity 
+                    key={exp.id} 
+                    style={styles.expCard}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate('ExpenseDetails', { id: exp.id })}>
+                    <View style={styles.expLeft}>
+                      <View style={[styles.iconBox, { backgroundColor: color + '15' }]}>
+                        <Icon color={color} size={20} />
+                      </View>
+                      <View>
+                        <Text style={styles.expTitle}>{exp.title}</Text>
+                        <Text style={styles.expDate}>{exp.date} • {exp.category}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.expAmount}>-₹{exp.amount.toLocaleString('en-IN')}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      )}
 
       {/* Floating Action Button */}
       <TouchableOpacity 
@@ -129,6 +222,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
   scrollContent: {
     padding: spacing.l,
     paddingBottom: 100, // Space for FAB
@@ -170,6 +274,7 @@ const styles = StyleSheet.create({
   },
   legendRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.m,
   },
   legendItem: {
@@ -192,6 +297,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
     marginBottom: spacing.m,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl * 2,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
   },
   listContainer: {
     gap: spacing.m,

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StatusBar,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -16,35 +17,94 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { getFeeById } from '../../service/merchant';
 
-export default function ReceiptScreen({ navigation }: any) {
+export default function ReceiptScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { feeId } = route.params || {};
   
+  const [loading, setLoading] = useState(true);
+  const [fee, setFee] = useState<any>(null);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
 
+  const fetchReceipt = async () => {
+    if (!feeId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await getFeeById(feeId);
+      if (response.status === 200 && response.data?.success) {
+        setFee(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch receipt', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 40,
-        useNativeDriver: true,
-        delay: 200,
-      })
-    ]).start();
-  }, []);
+    fetchReceipt();
+  }, [feeId]);
+
+  useEffect(() => {
+    if (!loading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 6,
+          tension: 40,
+          useNativeDriver: true,
+          delay: 200,
+        })
+      ]).start();
+    }
+  }, [loading]);
+
+  const formatReceiptDate = (dateString: string) => {
+    if (!dateString) return '-';
+    const d = new Date(dateString);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}, ${timeStr}`;
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Fetching receipt details…
+        </Text>
+      </View>
+    );
+  }
+
+  const amount = fee ? fee.amount : 12500;
+  const txId = fee ? `TXN-${fee._id.toString().toUpperCase()}` : 'TXN-9876543210';
+  const dateTime = fee ? formatReceiptDate(fee.paymentDate) : '01 Jun 2026, 10:45 AM';
+  const method = fee ? fee.paymentMethod || 'UPI' : 'UPI (GPay)';
+  const status = fee ? (fee.status === 'Paid' ? 'Completed' : fee.status) : 'Completed';
+  
+  // Breakdown calculations
+  const messAmount = Math.min(2500, amount);
+  const rentAmount = amount - messAmount;
 
   return (
     <View style={styles.container}>
@@ -59,7 +119,7 @@ export default function ReceiptScreen({ navigation }: any) {
         <View style={styles.decorativeCircle1} />
         <View style={styles.decorativeCircle2} />
       </LinearGradient>
-
+ 
       <View style={[styles.headerTop, { paddingTop: insets.top + spacing.m }]}>
         <TouchableOpacity 
           onPress={() => navigation.goBack()}
@@ -69,7 +129,7 @@ export default function ReceiptScreen({ navigation }: any) {
         <Text style={styles.headerTitle}>Transaction Receipt</Text>
         <View style={{ width: 40 }} />
       </View>
-
+ 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Animated.View
           style={{
@@ -89,52 +149,56 @@ export default function ReceiptScreen({ navigation }: any) {
             
             <View style={styles.amountBox}>
               <Text style={styles.currencySymbol}>₹</Text>
-              <Text style={styles.amountValue}>12,500</Text>
+              <Text style={styles.amountValue}>{amount.toLocaleString('en-IN')}</Text>
             </View>
-
+ 
             <View style={styles.detailsBox}>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Transaction ID</Text>
-                <Text style={styles.detailValue}>TXN-9876543210</Text>
+                <Text style={styles.detailValue} numberOfLines={1} ellipsizeMode="middle">{txId}</Text>
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Date & Time</Text>
-                <Text style={styles.detailValue}>01 Jun 2026, 10:45 AM</Text>
+                <Text style={styles.detailValue}>{dateTime}</Text>
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Payment Method</Text>
-                <Text style={styles.detailValue}>UPI (GPay)</Text>
+                <Text style={styles.detailValue}>{method}</Text>
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Status</Text>
                 <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>Completed</Text>
+                  <Text style={styles.statusText}>{status}</Text>
                 </View>
               </View>
             </View>
-
+ 
             <View style={styles.dividerContainer}>
               <View style={styles.notchLeft} />
               <View style={styles.dashedLine} />
               <View style={styles.notchRight} />
             </View>
-
+ 
             <Text style={styles.breakdownTitle}>Bill Breakdown</Text>
-            <View style={styles.billRow}>
-              <Text style={styles.billItem}>Room Rent (June)</Text>
-              <Text style={styles.billAmount}>₹10,000</Text>
-            </View>
-            <View style={styles.billRow}>
-              <Text style={styles.billItem}>Mess Fee (June)</Text>
-              <Text style={styles.billAmount}>₹2,500</Text>
-            </View>
+            {rentAmount > 0 && (
+              <View style={styles.billRow}>
+                <Text style={styles.billItem}>Room Rent</Text>
+                <Text style={styles.billAmount}>₹{rentAmount.toLocaleString('en-IN')}</Text>
+              </View>
+            )}
+            {messAmount > 0 && (
+              <View style={styles.billRow}>
+                <Text style={styles.billItem}>Mess Fee</Text>
+                <Text style={styles.billAmount}>₹{messAmount.toLocaleString('en-IN')}</Text>
+              </View>
+            )}
             <View style={[styles.billRow, styles.totalRow]}>
               <Text style={styles.totalLabel}>Total Paid</Text>
-              <Text style={styles.totalAmount}>₹12,500</Text>
+              <Text style={styles.totalAmount}>₹{amount.toLocaleString('en-IN')}</Text>
             </View>
             
           </View>
-
+ 
         </Animated.View>
       </ScrollView>
 
@@ -303,6 +367,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.text,
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: spacing.m,
   },
   statusBadge: {
     backgroundColor: colors.successBg,

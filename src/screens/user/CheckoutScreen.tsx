@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   StatusBar,
   Animated,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -16,9 +18,13 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { payFee } from '../../service/merchant';
 
-export default function CheckoutScreen({ navigation }: any) {
+export default function CheckoutScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { amount = 12500 } = route.params || {};
+
+  const [isLoading, setIsLoading] = useState(false);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -38,9 +44,27 @@ export default function CheckoutScreen({ navigation }: any) {
     ]).start();
   }, []);
 
-  const handlePay = () => {
-    navigation.navigate('Receipt');
+  const handlePay = async () => {
+    setIsLoading(true);
+    try {
+      const response = await payFee({ amount, paymentMethod: 'UPI' });
+      if (response.status === 201 && response.data?.success) {
+        const feeId = response.data.data._id;
+        navigation.navigate('Receipt', { feeId });
+      } else {
+        Alert.alert('Payment Failed', response.data?.message || 'Transaction could not be completed.');
+      }
+    } catch (error: any) {
+      console.error('Failed to checkout', error);
+      Alert.alert('Error', error.response?.data?.message || 'Something went wrong during payment.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Breakdown calculations
+  const messFee = Math.min(2500, amount);
+  const roomRent = amount - messFee;
 
   return (
     <View style={styles.container}>
@@ -75,20 +99,24 @@ export default function CheckoutScreen({ navigation }: any) {
           <View style={styles.billCard}>
             <Text style={styles.billTitle}>Bill Summary</Text>
             
-            <View style={styles.billRow}>
-              <Text style={styles.billItem}>Room Rent (June)</Text>
-              <Text style={styles.billAmount}>₹10,000</Text>
-            </View>
-            <View style={styles.billRow}>
-              <Text style={styles.billItem}>Mess Fee (June)</Text>
-              <Text style={styles.billAmount}>₹2,500</Text>
-            </View>
+            {roomRent > 0 && (
+              <View style={styles.billRow}>
+                <Text style={styles.billItem}>Room Rent</Text>
+                <Text style={styles.billAmount}>₹{roomRent.toLocaleString('en-IN')}</Text>
+              </View>
+            )}
+            {messFee > 0 && (
+              <View style={styles.billRow}>
+                <Text style={styles.billItem}>Mess Fee</Text>
+                <Text style={styles.billAmount}>₹{messFee.toLocaleString('en-IN')}</Text>
+              </View>
+            )}
             
             <View style={styles.divider} />
             
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Payable</Text>
-              <Text style={styles.totalAmount}>₹12,500</Text>
+              <Text style={styles.totalAmount}>₹{amount.toLocaleString('en-IN')}</Text>
             </View>
           </View>
 
@@ -126,15 +154,21 @@ export default function CheckoutScreen({ navigation }: any) {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.m }]}>
-        <TouchableOpacity activeOpacity={0.9} onPress={handlePay}>
+        <TouchableOpacity activeOpacity={0.9} onPress={handlePay} disabled={isLoading}>
           <LinearGradient
-            colors={['#3B82F6', '#2563EB']}
+            colors={isLoading ? [colors.textSecondary, colors.textSecondary] : ['#3B82F6', '#2563EB']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.payButton}
           >
-            <CreditCard color="#FFFFFF" size={20} strokeWidth={2.5} />
-            <Text style={styles.payButtonText}>Pay ₹12,500</Text>
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <CreditCard color="#FFFFFF" size={20} strokeWidth={2.5} />
+                <Text style={styles.payButtonText}>Pay ₹{amount.toLocaleString('en-IN')}</Text>
+              </>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </View>

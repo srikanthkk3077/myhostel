@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   TextInput,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -14,36 +16,77 @@ import {
   User,
   MapPin,
   CheckCircle2,
-  IndianRupee,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { getUnassignedMembers, assignMember } from '../../../service/merchant';
 
 export default function AssignMemberScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const { room, bedId } = route.params || { room: { id: '101' }, bedId: 'A' };
+  const { room, bedId } = route.params || { room: { id: '101' }, bedId: 'Bed 1' };
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMember, setSelectedMember] = useState<string | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [members, setMembers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAssigning, setIsAssigning] = useState(false);
 
-  // Unassigned members — would come from your backend
-  const unassignedMembers = [
-    { id: '1', name: 'Rahul Sharma', phone: '+91 98765 43210', joinDate: '10 Mar 2026', balance: 0 },
-    { id: '2', name: 'Amit Verma', phone: '+91 91234 56789', joinDate: '15 Feb 2026', balance: 1500 },
-    { id: '3', name: 'Priya Patel', phone: '+91 87654 32109', joinDate: '01 Jan 2026', balance: 0 },
-    { id: '4', name: 'Sunita Kumari', phone: '+91 77654 21098', joinDate: '20 Apr 2026', balance: 3000 },
-  ];
+  const fetchUnassigned = async () => {
+    try {
+      setIsLoading(true);
+      const res = await getUnassignedMembers();
+      if (res.status === 200 && res.data?.success) {
+        setMembers(res.data.data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const filtered = unassignedMembers.filter((m) =>
+  useFocusEffect(
+    useCallback(() => {
+      fetchUnassigned();
+    }, [])
+  );
+
+  const filtered = members.filter((m) =>
     m.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const getInitials = (name: string) =>
-    name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
-
-  const handleAssign = () => {
-    if (!selectedMember) return;
-    navigation.goBack();
+  const getInitials = (name: string) => {
+    if (!name) return '??';
+    return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
   };
+
+  const handleAssign = async () => {
+    if (!selectedMemberId) return;
+    const member = members.find((m) => m._id === selectedMemberId);
+    if (!member) return;
+
+    setIsAssigning(true);
+    try {
+      const res = await assignMember(selectedMemberId, String(room.id), bedId);
+      if (res.status === 200 && res.data?.success) {
+        Alert.alert(
+          'Success 🎉',
+          `${member.name} has been assigned to Room ${room.id} – ${bedId}`,
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert('Failed', res.data?.message || 'Could not assign member');
+      }
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.message || error?.message || 'Something went wrong';
+      Alert.alert('Error', errorMsg);
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const selectedMember = members.find((m) => m._id === selectedMemberId);
 
   return (
     <View style={styles.container}>
@@ -58,7 +101,7 @@ export default function AssignMemberScreen({ navigation, route }: any) {
           </TouchableOpacity>
           <View>
             <Text style={styles.headerTitle}>Assign Member</Text>
-            <Text style={styles.headerSubtitle}>Room {room.id} • Bed {bedId}</Text>
+            <Text style={styles.headerSubtitle}>Room {room.id} • {bedId}</Text>
           </View>
           <View style={{ width: 44 }} />
         </View>
@@ -75,58 +118,68 @@ export default function AssignMemberScreen({ navigation, route }: any) {
         />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.sectionTitle}>
-          {filtered.length} Available Member{filtered.length !== 1 ? 's' : ''}
-        </Text>
-        {filtered.map((member) => {
-          const isSelected = selectedMember === member.id;
-          return (
-            <TouchableOpacity
-              key={member.id}
-              style={[styles.memberCard, isSelected && styles.memberCardActive]}
-              activeOpacity={0.85}
-              onPress={() => setSelectedMember(isSelected ? null : member.id)}>
-              <View style={styles.cardLeft}>
-                <View style={[styles.avatar, { backgroundColor: isSelected ? colors.primary : colors.primaryBg }]}>
-                  <Text style={[styles.avatarText, { color: isSelected ? '#FFFFFF' : colors.primary }]}>
-                    {getInitials(member.name)}
-                  </Text>
-                </View>
-                <View>
-                  <Text style={styles.memberName}>{member.name}</Text>
-                  <View style={styles.metaRow}>
-                    <MapPin color={colors.textTertiary} size={11} strokeWidth={2.5} />
-                    <Text style={styles.metaText}>Unassigned</Text>
-                    {member.balance > 0 && (
-                      <>
-                        <View style={styles.metaDot} />
-                        <IndianRupee color={colors.danger} size={10} strokeWidth={3} />
-                        <Text style={[styles.metaText, { color: colors.danger }]}>
-                          ₹{member.balance} due
-                        </Text>
-                      </>
-                    )}
+      {isLoading ? (
+        <View style={styles.centerLoader}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading members...</Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <Text style={styles.sectionTitle}>
+            {filtered.length === 0
+              ? 'No unassigned members found'
+              : `${filtered.length} Available Member${filtered.length !== 1 ? 's' : ''}`}
+          </Text>
+          {filtered.map((member) => {
+            const isSelected = selectedMemberId === member._id;
+            return (
+              <TouchableOpacity
+                key={member._id}
+                style={[styles.memberCard, isSelected && styles.memberCardActive]}
+                activeOpacity={0.85}
+                onPress={() => setSelectedMemberId(isSelected ? null : member._id)}>
+                <View style={styles.cardLeft}>
+                  <View style={[styles.avatar, { backgroundColor: isSelected ? colors.primary : colors.primaryBg }]}>
+                    <Text style={[styles.avatarText, { color: isSelected ? '#FFFFFF' : colors.primary }]}>
+                      {getInitials(member.name)}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={styles.memberName}>{member.name}</Text>
+                    <View style={styles.metaRow}>
+                      <MapPin color={colors.textTertiary} size={11} strokeWidth={2.5} />
+                      <Text style={styles.metaText}>Unassigned</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-              {isSelected && (
-                <CheckCircle2 color={colors.primary} size={24} strokeWidth={2.5} />
-              )}
-            </TouchableOpacity>
-          );
-        })}
-        <View style={{ height: 120 }} />
-      </ScrollView>
+                {isSelected && (
+                  <CheckCircle2 color={colors.primary} size={24} strokeWidth={2.5} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+          <View style={{ height: 120 }} />
+        </ScrollView>
+      )}
 
       {/* Sticky bottom button */}
-      {selectedMember && (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 100 }]}>
-          <TouchableOpacity style={styles.assignButton} activeOpacity={0.85} onPress={handleAssign}>
-            <User color="#FFFFFF" size={18} strokeWidth={2.5} />
-            <Text style={styles.assignButtonText}>
-              Assign {unassignedMembers.find(m => m.id === selectedMember)?.name}
-            </Text>
+      {selectedMemberId && (
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
+          <TouchableOpacity
+            style={styles.assignButton}
+            activeOpacity={0.85}
+            onPress={handleAssign}
+            disabled={isAssigning}>
+            {isAssigning ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <User color="#FFFFFF" size={18} strokeWidth={2.5} />
+                <Text style={styles.assignButtonText}>
+                  Assign {selectedMember?.name}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -201,6 +254,16 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.m,
   },
+  centerLoader: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.m,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
   memberCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -252,13 +315,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
-  },
-  metaDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: colors.border,
-    marginHorizontal: 2,
   },
   bottomBar: {
     backgroundColor: '#FFFFFF',

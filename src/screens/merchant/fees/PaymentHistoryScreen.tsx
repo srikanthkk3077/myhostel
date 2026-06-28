@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,20 +6,52 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
+  Platform,
 } from 'react-native';
 import { ArrowLeft, CheckCircle2, AlertCircle, Download, FileText } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getFeeHistory } from '../../../service/merchant';
 
 export default function PaymentHistoryScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const history = [
-    { id: '1', name: 'Rahul Kumar', amount: 5000, date: '12 Jun 2026', method: 'UPI', status: 'Success' },
-    { id: '2', name: 'Srikanth', amount: 2000, date: '10 Jun 2026', method: 'Cash', status: 'Success' },
-    { id: '3', name: 'Amit Singh', amount: 4500, date: '08 Jun 2026', method: 'Bank Transfer', status: 'Failed' },
-    { id: '4', name: 'Vikram', amount: 5000, date: '01 Jun 2026', method: 'UPI', status: 'Success' },
-  ];
+  const fetchHistory = async () => {
+    try {
+      const response = await getFeeHistory();
+      if (response.status === 200 && response.data?.success) {
+        setHistory(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching fee history:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchHistory();
+  };
+
+  const formatDate = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -39,44 +71,64 @@ export default function PaymentHistoryScreen({ navigation }: any) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.listContainer}>
-          {history.map((tx) => {
-            const isSuccess = tx.status === 'Success';
-            return (
-              <View key={tx.id} style={styles.txCard}>
-                <View style={styles.txLeft}>
-                  <View style={[
-                    styles.iconBox,
-                    { backgroundColor: isSuccess ? colors.successBg : colors.dangerBg }
-                  ]}>
-                    <FileText color={isSuccess ? colors.success : colors.danger} size={20} />
-                  </View>
-                  <View>
-                    <Text style={styles.txName}>{tx.name}</Text>
-                    <Text style={styles.txDate}>{tx.date} • {tx.method}</Text>
-                  </View>
-                </View>
-                <View style={styles.txRight}>
-                  <Text style={[styles.txAmount, !isSuccess && { color: colors.danger }]}>
-                    {isSuccess ? '+' : ''}₹{tx.amount}
-                  </Text>
-                  <View style={[styles.statusBadge, { backgroundColor: isSuccess ? colors.successBg : colors.dangerBg }]}>
-                    {isSuccess ? (
-                      <CheckCircle2 color={colors.success} size={12} strokeWidth={3} />
-                    ) : (
-                      <AlertCircle color={colors.danger} size={12} strokeWidth={3} />
-                    )}
-                    <Text style={[styles.statusText, { color: isSuccess ? colors.success : colors.danger }]}>
-                      {tx.status}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+          }
+        >
+          <View style={styles.listContainer}>
+            {history.map((tx) => {
+              const isSuccess = tx.status === 'Paid';
+              return (
+                <TouchableOpacity 
+                  key={tx._id} 
+                  style={styles.txCard}
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate('TransactionDetails', { id: tx._id })}
+                >
+                  <View style={styles.txLeft}>
+                    <View style={[
+                      styles.iconBox,
+                      { backgroundColor: isSuccess ? colors.successBg : colors.dangerBg }
+                    ]}>
+                      <FileText color={isSuccess ? colors.success : colors.danger} size={20} />
+                    </View>
+                    <View>
+                      <Text style={styles.txName}>{tx.member?.name || 'Unknown Member'}</Text>
+                      <Text style={styles.txDate}>
+                        {formatDate(tx.paymentDate)} • {tx.paymentMethod}
+                      </Text>
+                      {tx.remarks ? <Text style={styles.txRemarks}>{tx.remarks}</Text> : null}
+                    </View>
+                  </View>
+                  <View style={styles.txRight}>
+                    <Text style={[styles.txAmount, !isSuccess && { color: colors.danger }]}>
+                      {isSuccess ? '+' : ''}₹{tx.amount}
+                    </Text>
+                    <View style={[styles.statusBadge, { backgroundColor: isSuccess ? colors.successBg : colors.dangerBg }]}>
+                      {isSuccess ? (
+                        <CheckCircle2 color={colors.success} size={12} strokeWidth={3} />
+                      ) : (
+                        <AlertCircle color={colors.danger} size={12} strokeWidth={3} />
+                      )}
+                      <Text style={[styles.statusText, { color: isSuccess ? colors.success : colors.danger }]}>
+                        {isSuccess ? 'Success' : 'Failed'}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -145,6 +197,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.m,
+    flex: 1,
   },
   iconBox: {
     width: 44,
@@ -164,9 +217,16 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '500',
   },
+  txRemarks: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
   txRight: {
     alignItems: 'flex-end',
     gap: 6,
+    marginLeft: spacing.s,
   },
   txAmount: {
     fontSize: 16,
@@ -184,5 +244,10 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 10,
     fontWeight: '700',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

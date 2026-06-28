@@ -10,6 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  Image,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -23,6 +25,8 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { launchImageLibrary } from 'react-native-image-picker';
+import { createComplaint } from '../../service/complaintService';
 
 export default function RaiseComplaintScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -48,6 +52,23 @@ export default function RaiseComplaintScreen({ navigation }: any) {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [base64Image, setBase64Image] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleImagePick = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+      includeBase64: true,
+    });
+    if (result.assets && result.assets.length > 0) {
+      setSelectedImage(result.assets[0].uri || null);
+      if (result.assets[0].base64) {
+        setBase64Image(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      }
+    }
+  };
 
   const categories = [
     { id: 'electrical', name: 'Electrical', icon: Zap },
@@ -57,8 +78,50 @@ export default function RaiseComplaintScreen({ navigation }: any) {
     { id: 'other', name: 'Other', icon: MoreHorizontal },
   ];
 
-  const handleSubmit = () => {
-    navigation.goBack();
+  const handleSubmit = async () => {
+    if (!selectedCategory) {
+      Alert.alert('Error', 'Please select a category');
+      return;
+    }
+    if (!title.trim()) {
+      Alert.alert('Error', 'Please enter a complaint title');
+      return;
+    }
+    if (!description.trim()) {
+      Alert.alert('Error', 'Please enter a description');
+      return;
+    }
+
+    setSubmitting(true);
+
+    const categoryMapping: { [key: string]: string } = {
+      electrical: 'Electrical',
+      plumbing: 'Plumbing',
+      wifi: 'Internet',
+      carpentry: 'Carpentry',
+      other: 'Other',
+    };
+    const categoryName = categoryMapping[selectedCategory] || 'Other';
+
+    try {
+      const response = await createComplaint({
+        title: title.trim(),
+        category: categoryName,
+        description: description.trim(),
+        image: base64Image,
+      });
+
+      if (response.status === 201 && response.data?.success) {
+        navigation.goBack();
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to submit complaint');
+      }
+    } catch (error: any) {
+      console.error('Submit complaint error:', error);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -150,11 +213,22 @@ export default function RaiseComplaintScreen({ navigation }: any) {
             </View>
 
             <Text style={styles.inputLabel}>Add Photo (Optional)</Text>
-            <TouchableOpacity style={styles.uploadBox} activeOpacity={0.8}>
-              <View style={styles.uploadIconCircle}>
-                <Camera color="#7C3AED" size={28} strokeWidth={2} />
-              </View>
-              <Text style={styles.uploadText}>Tap to take a photo or choose from gallery</Text>
+            <TouchableOpacity style={styles.uploadBox} activeOpacity={0.8} onPress={handleImagePick}>
+              {selectedImage ? (
+                <View style={styles.imagePreviewContainer}>
+                  <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                  <View style={styles.imageOverlay}>
+                    <Text style={styles.uploadTextWhite}>Tap to change photo</Text>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.uploadIconCircle}>
+                    <Camera color="#7C3AED" size={28} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.uploadText}>Tap to take a photo or choose from gallery</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -162,14 +236,20 @@ export default function RaiseComplaintScreen({ navigation }: any) {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.m }]}>
-        <TouchableOpacity activeOpacity={0.9} onPress={handleSubmit}>
+        <TouchableOpacity 
+          activeOpacity={0.9} 
+          onPress={handleSubmit}
+          disabled={submitting}
+        >
           <LinearGradient
-            colors={['#7C3AED', '#4F46E5']}
+            colors={submitting ? ['#9CA3AF', '#6B7280'] : ['#7C3AED', '#4F46E5']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.submitButton}
           >
-            <Text style={styles.submitButtonText}>Submit Complaint</Text>
+            <Text style={styles.submitButtonText}>
+              {submitting ? 'Submitting...' : 'Submit Complaint'}
+            </Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>
@@ -318,6 +398,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   uploadIconCircle: {
     width: 56,
@@ -331,6 +412,29 @@ const styles = StyleSheet.create({
   uploadText: {
     fontSize: 14,
     color: '#6D28D9',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  imagePreviewContainer: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  imageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadTextWhite: {
+    fontSize: 14,
+    color: '#FFFFFF',
     fontWeight: '600',
     textAlign: 'center',
   },

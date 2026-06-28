@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -11,6 +12,7 @@ import {
   Pressable,
   TextInput,
   Modal,
+  Platform,
 } from 'react-native';
 import {
   Plus,
@@ -23,12 +25,16 @@ import {
   ChevronRight,
   Home,
   TrendingUp,
-  BedDouble,
   X,
   Check,
+  LayoutGrid,
+  List,
+  BedDouble,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { getRooms } from '../../../service/merchant';
 
 const { width } = Dimensions.get('window');
 
@@ -36,6 +42,7 @@ export default function RoomsListScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'ac' | 'non-ac'>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   // Advanced Filter States
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -82,80 +89,92 @@ export default function RoomsListScreen({ navigation }: any) {
     outputRange: [0, -20],
   });
 
-  const rooms = [
-    {
-      id: '101',
-      type: 'AC Single',
-      isAC: true,
-      capacity: 4,
-      occupants: 2,
-      floor: 1,
-      price: 12000,
-      beds: [
-        { id: '1', status: 'Occupied', student: 'John Doe' },
-        { id: '2', status: 'Occupied', student: 'Mike Smith' },
-        { id: '3', status: 'Vacant' },
-        { id: '4', status: 'Vacant' },
-      ],
-    },
-    {
-      id: '102',
-      type: 'Non-AC Double',
-      isAC: false,
-      capacity: 2,
-      occupants: 1,
-      floor: 1,
-      price: 8000,
-      beds: [
-        { id: '1', status: 'Occupied', student: 'Sarah Connor' },
-        { id: '2', status: 'Vacant' },
-      ],
-    },
-    {
-      id: '103',
-      type: 'AC Double',
-      isAC: true,
-      capacity: 2,
-      occupants: 2,
-      floor: 1,
-      price: 10000,
-      beds: [
-        { id: '1', status: 'Occupied', student: 'Jane Smith' },
-        { id: '2', status: 'Occupied', student: 'Emily Rose' },
-      ],
-    },
-    {
-      id: '201',
-      type: 'AC Triple',
-      isAC: true,
-      capacity: 3,
-      occupants: 2,
-      floor: 2,
-      price: 14000,
-      beds: [
-        { id: '1', status: 'Occupied', student: 'Alex Kumar' },
-        { id: '2', status: 'Occupied', student: 'Priya Patel' },
-        { id: '3', status: 'Vacant' },
-      ],
-    },
-  ];
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchRooms = async () => {
+    try {
+      setIsLoading(true);
+      const response = await getRooms();
+      if (response.status === 200 && response.data?.success) {
+        // Map the backend data to the frontend structure
+        const mappedRooms = (response.data.data || []).map((r: any) => ({
+          _id: r._id,
+          id: String(r.roomNumber),
+          type: r.roomType || 'Standard',
+          isAC: r.roomType?.toLowerCase().includes('ac') && !r.roomType?.toLowerCase().includes('non-ac'),
+          capacity: r.roomCapacity || 2,
+          occupants: r.occupants || 0,
+          floor: Number(r.floor) || 1,
+          price: r.pricePerMonth || 0,
+          beds: (() => {
+            const assignedMembers = r.members || [];
+            const mappedBeds: any[] = [];
+            
+            // Add all assigned members first using their actual bed names
+            assignedMembers.forEach((m: any) => {
+              let bedId = m.bed || '';
+              if (bedId.startsWith('Bed ')) {
+                bedId = bedId.replace('Bed ', '');
+              }
+              mappedBeds.push({
+                id: bedId || String(mappedBeds.length + 1),
+                status: 'Occupied',
+                student: m.name,
+                memberId: m._id,
+              });
+            });
+            
+            // Fill remaining capacity with vacant beds
+            const capacity = r.roomCapacity || 2;
+            let nextVacantId = 1;
+            while (mappedBeds.length < capacity) {
+              // Prevent duplicating an ID that an assigned member is already using
+              while (mappedBeds.some(b => String(b.id) === String(nextVacantId))) {
+                nextVacantId++;
+              }
+              mappedBeds.push({
+                id: String(nextVacantId),
+                status: 'Vacant',
+              });
+              nextVacantId++;
+            }
+            
+            // Optional: Sort beds so numbers come first or just sort alphabetically
+            return mappedBeds.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+          })(),
+        }));
+        setRooms(mappedRooms);
+      }
+    } catch (error) {
+      console.log('Error fetching rooms:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchRooms();
+    }, [])
+  );
 
   const filteredRooms = rooms.filter((room) => {
     // 1. Search filter
     const matchesSearch = room.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       room.type.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     // 2. AC/Non-AC filter
     const matchesAcType = filterType === 'all' ||
       (filterType === 'ac' && room.isAC) ||
       (filterType === 'non-ac' && !room.isAC);
-      
+
     // 3. Floor filter
     const matchesFloor = selectedFloor === 'all' || room.floor === selectedFloor;
-    
+
     // 4. Capacity / Sharing filter
     const matchesCapacity = selectedCapacity === 'all' || room.capacity === selectedCapacity;
-    
+
     // 5. Availability filter
     const isAvailable = room.capacity - room.occupants > 0;
     const matchesAvailability = showOnlyAvailable ? isAvailable : true;
@@ -167,10 +186,50 @@ export default function RoomsListScreen({ navigation }: any) {
   const totalOccupied = rooms.reduce((acc, r) => acc + r.occupants, 0);
   const occupancyRate = Math.round((totalOccupied / totalCapacity) * 100);
 
+  const groupedRoomsByFloor = filteredRooms.reduce((acc: any, room: any) => {
+    const floor = room.floor;
+    if (!acc[floor]) acc[floor] = [];
+    acc[floor].push(room);
+    return acc;
+  }, {});
+
+  const renderGridRoomCard = (room: any) => {
+    return (
+      <TouchableOpacity
+        key={room.id}
+        style={styles.gridRoomCard}
+        activeOpacity={0.8}
+        onPress={() => navigation.navigate('RoomDetails', { room })}>
+        <Text style={styles.gridRoomNumber}>Room {room.id}</Text>
+        <Text style={styles.gridRoomType} numberOfLines={1}>{room.type}</Text>
+        <View style={styles.gridBedsContainer}>
+          {room.capacity <= 8 ? (
+            room.beds.map((bed: any, idx: number) => {
+              const occupied = bed.status === 'Occupied';
+              return (
+                <View
+                  key={`${bed.id}-${idx}`}
+                  style={[
+                    styles.gridBedSlot,
+                    { backgroundColor: occupied ? colors.danger : colors.success }
+                  ]}
+                />
+              );
+            })
+          ) : (
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>
+              {room.occupants}/{room.capacity} beds
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   const renderRoomCard = (room: any, index: number) => {
-    const isFull = room.occupants === room.capacity;
-    const vacant = room.capacity - room.occupants;
-    const progressPercentage = (room.occupants / room.capacity) * 100;
+    const isFull = room.occupants >= room.capacity;
+    const vacant = Math.max(0, room.capacity - room.occupants);
+    const progressPercentage = Math.min(100, (room.occupants / room.capacity) * 100);
     const progressColor = isFull ? colors.danger : room.occupants >= room.capacity * 0.7 ? colors.warning : colors.success;
 
     return (
@@ -213,34 +272,67 @@ export default function RoomsListScreen({ navigation }: any) {
               styles.statusText,
               { color: isFull ? colors.danger : colors.success }
             ]}>
-              {isFull ? 'Full' : `${vacant} Available`}
+              {isFull ? (room.occupants > room.capacity ? 'Over capacity' : 'Full') : `${vacant} Available`}
             </Text>
           </View>
         </View>
 
         {/* Bed Visualization */}
         <View style={styles.bedsContainer}>
-          {room.beds.map((bed: any, idx: number) => {
-            const occupied = bed.status === 'Occupied';
-            return (
-              <View
-                key={bed.id}
-                style={[
-                  styles.bedSlot,
-                  {
-                    backgroundColor: occupied ? colors.primary : colors.background,
-                    borderColor: occupied ? colors.primary : colors.border,
-                  }
-                ]}>
-                <BedDouble
-                  color={occupied ? '#FFFFFF' : colors.textTertiary}
-                  size={14}
-                  strokeWidth={2.5}
-                />
-              </View>
-            );
-          })}
+          {Number(room.capacity) <= 5 ? (
+            // Flex layout for 5 or fewer beds to perfectly fill the space evenly
+            <View style={{ flexDirection: 'row', gap: 6, flex: 1 }}>
+              {room.beds.map((bed: any, idx: number) => {
+                const occupied = bed.status === 'Occupied';
+                return (
+                  <View
+                    key={`${bed.id}-${idx}`}
+                    style={[
+                      styles.bedSlot,
+                      {
+                        backgroundColor: occupied ? colors.primary : colors.background,
+                        borderColor: occupied ? colors.primary : colors.border,
+                        flex: 1, // Stretch evenly
+                      }
+                    ]}>
+                    <BedDouble
+                      color={occupied ? '#FFFFFF' : colors.textTertiary}
+                      size={14}
+                      strokeWidth={2.5}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            // Scrollable row for > 5 beds to prevent squishing
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {room.beds.map((bed: any, idx: number) => {
+                const occupied = bed.status === 'Occupied';
+                return (
+                  <View
+                    key={`${bed.id}-${idx}`}
+                    style={[
+                      styles.bedSlot,
+                      {
+                        backgroundColor: occupied ? colors.primary : colors.background,
+                        borderColor: occupied ? colors.primary : colors.border,
+                        width: 48, // Fixed width
+                        flex: 0,
+                      }
+                    ]}>
+                    <BedDouble
+                      color={occupied ? '#FFFFFF' : colors.textTertiary}
+                      size={14}
+                      strokeWidth={2.5}
+                    />
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
         </View>
+
 
         {/* Stats Row */}
         <View style={styles.statsRow}>
@@ -280,17 +372,22 @@ export default function RoomsListScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Header Background */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']} // Very light green/mint gradient
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[styles.blob, styles.blob1, { transform: [{ translateY: blobY }] }]}
         />
         <Animated.View
           style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]}
         />
-      </View>
+      </LinearGradient>
 
       <ScrollView
         style={{ flex: 1, marginTop: insets.top }}
@@ -307,12 +404,24 @@ export default function RoomsListScreen({ navigation }: any) {
               <Text style={styles.titleLabel}>Manage Your</Text>
               <Text style={styles.title}>Rooms 🏠</Text>
             </View>
-            <TouchableOpacity 
-              style={styles.headerIconButton} 
-              activeOpacity={0.7}
-              onPress={() => setShowFilterModal(true)}>
-              <Filter color="#FFFFFF" size={20} strokeWidth={2.2} />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                activeOpacity={0.7}
+                onPress={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}>
+                {viewMode === 'list' ? (
+                  <LayoutGrid color="#16A34A" size={20} strokeWidth={2.2} />
+                ) : (
+                  <List color="#16A34A" size={20} strokeWidth={2.2} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                activeOpacity={0.7}
+                onPress={() => setShowFilterModal(true)}>
+                <Filter color="#16A34A" size={20} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Stats Overview Card */}
@@ -399,7 +508,18 @@ export default function RoomsListScreen({ navigation }: any) {
           </View>
 
           {/* Rooms List */}
-          {filteredRooms.map((room, idx) => renderRoomCard(room, idx))}
+          {viewMode === 'list' ? (
+            filteredRooms.map((room, idx) => renderRoomCard(room, idx))
+          ) : (
+            Object.keys(groupedRoomsByFloor).sort().map(floor => (
+              <View key={`floor-${floor}`}>
+                <Text style={styles.floorHeader}>Floor {floor}</Text>
+                <View style={styles.gridContainer}>
+                  {groupedRoomsByFloor[floor].map((room: any) => renderGridRoomCard(room))}
+                </View>
+              </View>
+            ))
+          )}
 
           {/* Empty space for FAB */}
           <View style={{ height: 100 }} />
@@ -430,9 +550,9 @@ export default function RoomsListScreen({ navigation }: any) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-              
+
               {/* Availability Toggle */}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.availabilityToggle, showOnlyAvailable && styles.availabilityToggleActive]}
                 activeOpacity={0.8}
                 onPress={() => setShowOnlyAvailable(!showOnlyAvailable)}>
@@ -489,8 +609,8 @@ export default function RoomsListScreen({ navigation }: any) {
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity 
-                style={styles.resetBtn} 
+              <TouchableOpacity
+                style={styles.resetBtn}
                 activeOpacity={0.8}
                 onPress={() => {
                   setSelectedFloor('all');
@@ -499,8 +619,8 @@ export default function RoomsListScreen({ navigation }: any) {
                 }}>
                 <Text style={styles.resetBtnText}>Reset</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.applyBtn} 
+              <TouchableOpacity
+                style={styles.applyBtn}
                 activeOpacity={0.8}
                 onPress={() => setShowFilterModal(false)}>
                 <Text style={styles.applyBtnText}>Apply Filters</Text>
@@ -525,29 +645,28 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 260,
-    backgroundColor: colors.primary,
+    height: 280,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.2,
   },
   blob1: {
     width: 260,
     height: 260,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -120,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 100,
     left: -60,
-    opacity: 0.15,
   },
   scrollContent: {
     paddingHorizontal: spacing.l,
@@ -563,25 +682,34 @@ const styles = StyleSheet.create({
   },
   titleLabel: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '500',
+    color: '#16A34A', // match theme
+    fontWeight: '700',
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: spacing.s,
   },
   headerIconButton: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   overviewCard: {
     backgroundColor: colors.surface,
@@ -728,6 +856,47 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  floorHeader: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: spacing.m,
+    marginTop: spacing.m,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.m,
+  },
+  gridRoomCard: {
+    width: (width - spacing.l * 2 - spacing.m) / 2, // 2 columns
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.m,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  gridRoomNumber: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  gridRoomType: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginBottom: spacing.m,
+  },
+  gridBedsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  gridBedSlot: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
   },
   roomCard: {
     backgroundColor: colors.surface,

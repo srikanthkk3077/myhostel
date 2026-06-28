@@ -1,0 +1,25 @@
+export const ENDPOINTS = {
+  REGISTER: 'api/auth/register',
+  LOGIN: 'api/auth/login',
+  ME: 'api/auth/me',
+  UPDATE_PROFILE: 'api/auth/profile',
+  CHANGE_PASSWORD: 'api/auth/password',
+  ROOMS: 'api/rooms',
+  MEMBERS: 'api/members',
+  REGISTER_MEMBER: 'api/members/register',
+  DASHBOARD: 'api/dashboard',
+  USER_DASHBOARD: 'api/dashboard/user',
+
+  FEES: 'api/fees',
+  MY_PAYMENTS: 'api/fees/my-payments',
+  MEMBER_TRANSACTIONS: 'api/fees/member',
+  EXPENSES: 'api/expenses',
+  COMPLAINTS: 'api/complaints',
+  MESS_MENU: 'api/mess-menu',
+  NOTICES: 'api/notices',
+  FORGOT_PASSWORD: 'api/auth/forgot-password',
+  RESET_PASSWORD: 'api/auth/reset-password',
+  PAY_FEE: 'api/fees/pay',
+  VISITOR_REQUESTS: 'api/visitor-requests',
+};
+

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StatusBar,
   TextInput,
+  Platform,
 } from 'react-native';
 import {
   ArrowLeft,

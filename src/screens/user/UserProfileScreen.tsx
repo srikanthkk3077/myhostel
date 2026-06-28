@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   StatusBar,
   Animated,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   User,
@@ -21,12 +23,37 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { getMe } from '../../service/merchant';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function UserProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const fetchProfile = async () => {
+    try {
+      const response = await getMe();
+      if (response.status === 200 && response.data?.success) {
+        setProfile(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user profile', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
 
   useEffect(() => {
     Animated.parallel([
@@ -44,19 +71,61 @@ export default function UserProfileScreen({ navigation }: any) {
   }, []);
 
   const handleLogout = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Login' }],
-    });
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await AsyncStorage.removeItem('authToken');
+            await AsyncStorage.removeItem('userRole');
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
+
+  const getInitials = (name: string) => {
+    if (!name) return 'U';
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading profile…
+        </Text>
+      </View>
+    );
+  }
+
+  const userRoleText = profile?.memberInfo ? 'B.Tech • 3rd Year' : 'Hostel Resident'; // Fallback / mock course if registered as member
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       
       {/* Premium Gradient Background */}
       <LinearGradient
-        colors={['#0F766E', '#0D9488', '#14B8A6']}
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.headerBackground, { height: 280 + insets.top }]}
@@ -64,7 +133,7 @@ export default function UserProfileScreen({ navigation }: any) {
         <View style={styles.decorativeCircle1} />
         <View style={styles.decorativeCircle2} />
       </LinearGradient>
-
+ 
       <ScrollView 
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + spacing.l }]} 
         showsVerticalScrollIndicator={false}
@@ -78,20 +147,20 @@ export default function UserProfileScreen({ navigation }: any) {
           <View style={styles.headerTop}>
             <Text style={styles.headerTitle}>My Profile</Text>
           </View>
-
+ 
           {/* Floating Profile Card */}
           <View style={styles.profileCard}>
             <View style={styles.avatarWrapper}>
               <LinearGradient
-                colors={['#14B8A6', '#0D9488']}
+                colors={['#16A34A', '#15803D']}
                 style={styles.avatarGradient}
               >
-                <Text style={styles.avatarText}>RS</Text>
+                <Text style={styles.avatarText}>{getInitials(profile?.name)}</Text>
               </LinearGradient>
             </View>
-            <Text style={styles.userName}>Rahul Sharma</Text>
+            <Text style={styles.userName}>{profile?.name || 'User'}</Text>
             <View style={styles.roleBadge}>
-              <Text style={styles.userRole}>B.Tech • 3rd Year</Text>
+              <Text style={styles.userRole}>{userRoleText}</Text>
             </View>
             
             <View style={styles.contactContainer}>
@@ -99,18 +168,18 @@ export default function UserProfileScreen({ navigation }: any) {
                 <View style={styles.contactIconBox}>
                   <Phone color={colors.textSecondary} size={16} strokeWidth={2.5} />
                 </View>
-                <Text style={styles.contactText}>+91 98765 43210</Text>
+                <Text style={styles.contactText}>{profile?.phoneNumber || '-'}</Text>
               </View>
               <View style={styles.contactDivider} />
               <View style={styles.contactItem}>
                 <View style={styles.contactIconBox}>
                   <Mail color={colors.textSecondary} size={16} strokeWidth={2.5} />
                 </View>
-                <Text style={styles.contactText}>rahul@example.com</Text>
+                <Text style={styles.contactText}>{profile?.email || '-'}</Text>
               </View>
             </View>
           </View>
-
+ 
           <Text style={styles.sectionTitle}>Account Settings</Text>
           <View style={styles.menuCard}>
             <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => navigation.navigate('EditProfile')}>
@@ -132,17 +201,7 @@ export default function UserProfileScreen({ navigation }: any) {
             </TouchableOpacity>
             
             <View style={styles.divider} />
-            
-            {/* <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => navigation.navigate('Preferences')}>
-              <View style={[styles.menuIconBox, { backgroundColor: '#FFFBEB' }]}>
-                <Settings color="#D97706" size={22} strokeWidth={2.5} />
-              </View>
-              <Text style={styles.menuLabel}>App Preferences</Text>
-              <ChevronRight color={colors.border} size={24} />
-            </TouchableOpacity> */}
-            
-            <View style={styles.divider} />
-
+ 
             <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => navigation.navigate('HelpSupport')}>
               <View style={[styles.menuIconBox, { backgroundColor: '#FAF5FF' }]}>
                 <HelpCircle color="#9333EA" size={22} strokeWidth={2.5} />
@@ -151,7 +210,7 @@ export default function UserProfileScreen({ navigation }: any) {
               <ChevronRight color={colors.border} size={24} />
             </TouchableOpacity>
           </View>
-
+ 
           <TouchableOpacity 
             style={styles.logoutButton} 
             activeOpacity={0.8}
@@ -159,7 +218,7 @@ export default function UserProfileScreen({ navigation }: any) {
             <LogOut color={colors.danger} size={20} strokeWidth={2.5} />
             <Text style={styles.logoutText}>Sign Out</Text>
           </TouchableOpacity>
-
+ 
         </Animated.View>
       </ScrollView>
     </View>
@@ -185,7 +244,7 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     borderRadius: 150,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -100,
     right: -50,
   },
@@ -194,7 +253,7 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     borderRadius: 75,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 150,
     left: -20,
   },
@@ -211,7 +270,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
   },
   profileCard: {

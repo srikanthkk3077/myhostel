@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -13,15 +15,81 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { getNotices } from '../../service/noticeService';
+
+const formatTime = (dateString: string) => {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  let timeStr = '';
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  timeStr = `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+
+  if (diffDays === 0 && now.getDate() === d.getDate()) {
+    return `Today, ${timeStr}`;
+  } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== d.getDate())) {
+    return `Yesterday, ${timeStr}`;
+  } else if (diffDays < 7) {
+    return `${diffDays} days ago`;
+  } else {
+    const standardMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d.getDate()} ${standardMonths[d.getMonth()]} ${d.getFullYear()}`;
+  }
+};
 
 export default function NoticeBoardScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [notices, setNotices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const notices = [
-    { id: '1', title: 'Water Supply Issue', content: 'Due to municipal maintenance, water supply will be interrupted between 2 PM and 5 PM today.', date: 'Today, 10:00 AM', priority: 'high' },
-    { id: '2', title: 'Mess Menu Updated', content: 'The mess menu for the upcoming week has been updated. Paneer Tikka will be served on Sunday night.', date: 'Yesterday, 6:00 PM', priority: 'normal' },
-    { id: '3', title: 'WiFi Maintenance', content: 'Scheduled WiFi maintenance will occur at 2 AM tonight. Expect intermittent downtime.', date: '12 Jun, 2:00 PM', priority: 'normal' },
-  ];
+  const fetchNotices = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const response = await getNotices();
+      if (response.status === 200 && response.data?.success) {
+        setNotices(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch student notices', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchNotices(true);
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchNotices(false);
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading notices…
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -37,27 +105,47 @@ export default function NoticeBoardScreen({ navigation }: any) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {notices.map((notice) => (
-          <View key={notice.id} style={styles.noticeCard}>
-            <View style={styles.noticeHeader}>
-              <View style={[
-                styles.noticeIconBox,
-                notice.priority === 'high' ? { backgroundColor: colors.dangerBg } : { backgroundColor: colors.primaryBg }
-              ]}>
-                <Bell 
-                  color={notice.priority === 'high' ? colors.danger : colors.primary} 
-                  size={18} 
-                  strokeWidth={2.5} 
-                />
-              </View>
-              <Text style={styles.noticeDate}>{notice.date}</Text>
-            </View>
-            <Text style={styles.noticeTitle}>{notice.title}</Text>
-            <Text style={styles.noticeContent}>{notice.content}</Text>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
+      >
+        {notices.length === 0 ? (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 80 }}>
+            <Bell color={colors.textTertiary} size={64} strokeWidth={1.5} />
+            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginTop: spacing.l }}>
+              No notices published
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: spacing.s, textAlign: 'center', paddingHorizontal: spacing.xl }}>
+              Check back later for any updates from your warden or hostel management.
+            </Text>
           </View>
-        ))}
+        ) : (
+          notices.map((notice) => {
+            const isHigh = notice.type === 'Urgent';
+            return (
+              <View key={notice._id} style={styles.noticeCard}>
+                <View style={styles.noticeHeader}>
+                  <View style={[
+                    styles.noticeIconBox,
+                    isHigh ? { backgroundColor: colors.dangerBg } : { backgroundColor: colors.primaryBg }
+                  ]}>
+                    <Bell 
+                      color={isHigh ? colors.danger : colors.primary} 
+                      size={18} 
+                      strokeWidth={2.5} 
+                    />
+                  </View>
+                  <Text style={styles.noticeDate}>{formatTime(notice.createdAt)}</Text>
+                </View>
+                <Text style={styles.noticeTitle}>{notice.title}</Text>
+                <Text style={styles.noticeContent}>{notice.message}</Text>
+              </View>
+            );
+          })
+        )}
 
       </ScrollView>
     </View>

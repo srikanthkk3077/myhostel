@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   StatusBar,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -18,12 +20,37 @@ import {
   LogOut,
   ChevronRight,
   Building,
+  CreditCard,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getMe } from '../../../service/merchant';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProfile = async () => {
+    try {
+      const response = await getMe();
+      if (response.status === 200 && response.data?.success) {
+        setProfile(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch profile', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
 
   const menuSections = [
     {
@@ -37,8 +64,9 @@ export default function ProfileScreen({ navigation }: any) {
     {
       title: 'Hostel Management',
       items: [
-        { id: 'hostel_details', icon: Building, title: 'Hostel Details', color: colors.info },
-        { id: 'preferences', icon: Settings, title: 'App Preferences', color: '#8B5CF6' },
+        { id: 'subscription', icon: CreditCard, title: 'My Subscription', color: colors.primary, screen: 'SubscriptionUpgrade' },
+        { id: 'hostel_details', icon: Building, title: 'Hostel Details', color: colors.info, screen: 'Dashboard' },
+        { id: 'preferences', icon: Settings, title: 'App Preferences', color: '#8B5CF6', screen: 'Dashboard' },
       ],
     },
     {
@@ -50,11 +78,34 @@ export default function ProfileScreen({ navigation }: any) {
   ];
 
   const handleLogout = () => {
-    // Implement logout logic here
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Auth' }],
-    });
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            await AsyncStorage.removeItem('authToken');
+            await AsyncStorage.removeItem('userRole');
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return 'A';
+    return name.charAt(0).toUpperCase();
   };
 
   return (
@@ -76,16 +127,27 @@ export default function ProfileScreen({ navigation }: any) {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Profile Card */}
         <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>A</Text>
-            </View>
-            <TouchableOpacity style={styles.editAvatarBtn}>
-              <Settings color="#FFFFFF" size={12} strokeWidth={3} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.userName}>Admin</Text>
-          <Text style={styles.userRole}>Hostel Manager • ID: HM-2024</Text>
+          {loading ? (
+             <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: spacing.xl }} />
+          ) : (
+            <>
+              <View style={styles.avatarContainer}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{getInitials(profile?.name || 'Admin')}</Text>
+                </View>
+                <TouchableOpacity style={styles.editAvatarBtn}>
+                  <Settings color="#FFFFFF" size={12} strokeWidth={3} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.userName}>{profile?.name || 'Admin'}</Text>
+              <Text style={styles.userRole}>
+                {profile?.role === 'merchant' ? 'Hostel Owner' : profile?.role || 'User'} • ID: {profile?._id?.substring(profile._id.length - 6).toUpperCase() || 'HM-2024'}
+              </Text>
+              <Text style={[styles.userRole, { marginTop: 4, color: colors.textTertiary, fontSize: 12 }]}>
+                {profile?.email}
+              </Text>
+            </>
+          )}
         </View>
 
         {/* Menu Sections */}
@@ -100,7 +162,8 @@ export default function ProfileScreen({ navigation }: any) {
                     styles.menuItem,
                     itemIndex !== section.items.length - 1 && styles.menuItemBorder,
                   ]}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                  onPress={() => (item as any).screen ? navigation.navigate((item as any).screen) : null}>
                   <View style={styles.menuItemLeft}>
                     <View style={[styles.menuIconBox, { backgroundColor: item.color + '15' }]}>
                       <item.icon color={item.color} size={20} strokeWidth={2.5} />

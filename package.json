@@ -10,17 +10,22 @@
     "test": "jest"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
+    "axios": "^1.18.1",
     "lucide-react-native": "^1.21.0",
     "react": "18.2.0",
     "react-native": "0.74.5",
     "react-native-gifted-charts": "^1.4.77",
+    "react-native-haptic-feedback": "^3.0.0",
+    "react-native-image-picker": "^8.2.1",
     "react-native-linear-gradient": "^2.8.3",
+    "react-native-qrcode-svg": "^6.3.21",
     "react-native-safe-area-context": "^5.8.0",
     "react-native-screens": "^3.31.1",
-    "react-native-svg": "^15.15.5"
+    "react-native-svg": "15.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

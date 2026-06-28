@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,23 +8,97 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
+  Modal,
+  FlatList,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { ArrowLeft, Check, Calendar, IndianRupee, CreditCard, Banknote, User } from 'lucide-react-native';
+import { ArrowLeft, Check, Calendar, IndianRupee, CreditCard, Banknote, User, ChevronDown, Search, X } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getMembers, collectFee } from '../../../service/merchant';
 
-export default function CollectFeeScreen({ navigation }: any) {
+export default function CollectFeeScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const [member, setMember] = useState('');
+  
+  const [loading, setLoading] = useState(false);
+  const [membersList, setMembersList] = useState<any[]>([]);
+  const [selectedMember, setSelectedMember] = useState<any>(null);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Cash' | 'Bank'>('UPI');
   const [date, setDate] = useState(new Date().toLocaleDateString('en-GB'));
   const [remarks, setRemarks] = useState('');
 
-  const handleCollect = () => {
-    // Collect fee logic here
-    navigation.goBack();
+  // Fetch active members
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        const response = await getMembers();
+        if (response.status === 200 && response.data?.success) {
+          const activeMembers = (response.data.data || []).filter((m: any) => m.status === 'Active');
+          setMembersList(activeMembers);
+
+          // If param is passed from PendingFeesScreen, pre-select
+          if (route.params?.memberId) {
+            const found = activeMembers.find((m: any) => m._id === route.params.memberId);
+            if (found) {
+              setSelectedMember(found);
+              setAmount(String(found.monthlyRent || ''));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching members', error);
+      }
+    };
+    fetchMembers();
+  }, [route.params]);
+
+  const handleCollect = async () => {
+    if (!selectedMember) {
+      Alert.alert('Error', 'Please select a member');
+      return;
+    }
+    if (!amount || isNaN(Number(amount))) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const now = new Date();
+      const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      const payload = {
+        memberId: selectedMember._id,
+        amount: Number(amount),
+        type: 'Monthly Fee',
+        paymentMonth: currentMonthStr,
+        paymentMethod,
+        remarks,
+      };
+
+      const response = await collectFee(payload);
+      if (response.status === 201 && response.data?.success) {
+        Alert.alert('Success', 'Payment recorded successfully', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to record payment');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.message || error.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const filteredMembers = membersList.filter(m => 
+    m.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const renderInput = (label: string, icon: any, placeholder: string, value: string, setValue: (t: string) => void, extraProps?: any) => (
     <View style={styles.inputGroup}>
@@ -68,9 +142,28 @@ export default function CollectFeeScreen({ navigation }: any) {
           <View style={styles.formCard}>
             <Text style={styles.sectionTitle}>Payment Details</Text>
             
-            {renderInput('Member Name', User, 'Search member...', member, setMember)}
+            {/* Custom dropdown styled input for Member Name */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Member Name</Text>
+              <TouchableOpacity 
+                style={styles.inputWrapper} 
+                onPress={() => setShowMemberModal(true)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.inputIcon}>
+                  <User color={colors.primary} size={20} />
+                </View>
+                <View style={{ flex: 1, paddingVertical: Platform.OS === 'ios' ? 14 : 10 }}>
+                  <Text style={[styles.inputText, !selectedMember && { color: colors.textTertiary }]}>
+                    {selectedMember ? `${selectedMember.name} (Room ${selectedMember.room || 'N/A'})` : 'Select member...'}
+                  </Text>
+                </View>
+                <ChevronDown color={colors.textSecondary} size={20} />
+              </TouchableOpacity>
+            </View>
+
             {renderInput('Amount (₹)', IndianRupee, 'e.g. 5000', amount, setAmount, { keyboardType: 'numeric' })}
-            {renderInput('Date', Calendar, 'DD/MM/YYYY', date, setDate)}
+            {renderInput('Date', Calendar, 'DD/MM/YYYY', date, setDate, { editable: false })}
 
             <Text style={styles.inputLabel}>Payment Method</Text>
             <View style={styles.methodsRow}>
@@ -104,17 +197,84 @@ export default function CollectFeeScreen({ navigation }: any) {
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={styles.collectButton}
+              style={[styles.collectButton, loading && { opacity: 0.7 }]}
               activeOpacity={0.85}
+              disabled={loading}
               onPress={handleCollect}>
-              <Text style={styles.collectButtonText}>Record Payment</Text>
-              <Check color="#FFFFFF" size={18} strokeWidth={2.5} />
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.collectButtonText}>Record Payment</Text>
+                  <Check color="#FFFFFF" size={18} strokeWidth={2.5} />
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Member Selection Modal */}
+      <Modal
+        visible={showMemberModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMemberModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Member</Text>
+              <TouchableOpacity onPress={() => setShowMemberModal(false)}>
+                <X color={colors.text} size={24} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.searchWrapper}>
+              <Search color={colors.textSecondary} size={20} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by name..."
+                placeholderTextColor={colors.textTertiary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+
+            <FlatList
+              data={filteredMembers}
+              keyExtractor={(item) => item._id}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.memberItem}
+                  onPress={() => {
+                    setSelectedMember(item);
+                    setAmount(String(item.monthlyRent || ''));
+                    setShowMemberModal(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{item.name}</Text>
+                    <Text style={styles.memberSub}>{`Room: ${item.room || 'Unassigned'} • Rent: ₹${item.monthlyRent || 0}`}</Text>
+                  </View>
+                  {selectedMember?._id === item._id && (
+                    <Check color={colors.primary} size={20} strokeWidth={3} />
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No active members found</Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -200,6 +360,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.text,
   },
+  inputText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text,
+  },
   methodsRow: {
     flexDirection: 'row',
     gap: spacing.m,
@@ -249,5 +414,77 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  /* Modal Styles */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '80%',
+    padding: spacing.l,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.m,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  searchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+    paddingHorizontal: spacing.m,
+    marginBottom: spacing.m,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text,
+    marginLeft: spacing.s,
+  },
+  memberItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.m,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  memberSub: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textTertiary,
+    fontWeight: '500',
   },
 });

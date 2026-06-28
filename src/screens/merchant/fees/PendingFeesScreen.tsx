@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,9 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { getFeeStats } from '../../../service/merchant';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function PendingFeesScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -31,6 +34,34 @@ export default function PendingFeesScreen({ navigation }: any) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const blobAnim = useRef(new Animated.Value(0)).current;
+
+  const [stats, setStats] = useState({ expectedRevenue: 0, received: 0, pending: 0 });
+  const [pendingStudents, setPendingStudents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = async () => {
+    try {
+      const response = await getFeeStats();
+      if (response.status === 200 && response.data?.success) {
+        setStats({
+          expectedRevenue: response.data.data.expectedRevenue || 0,
+          received: response.data.data.received || 0,
+          pending: response.data.data.pending || 0,
+        });
+        setPendingStudents(response.data.data.recentDues || []);
+      }
+    } catch (error) {
+      console.error('Error fetching fee stats', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchStats();
+    }, [])
+  );
 
   useEffect(() => {
     Animated.parallel([
@@ -67,25 +98,24 @@ export default function PendingFeesScreen({ navigation }: any) {
     outputRange: [0, -20],
   });
 
-  const pendingStudents = [
-    { id: '1', name: 'Srikanth', type: 'Monthly Fee', amount: 5000, status: 'Pending' },
-    { id: '2', name: 'Rahul Kumar', type: 'Monthly Fee', amount: 5000, status: 'Paid' },
-    { id: '3', name: 'Amit Singh', type: 'Deposit', amount: 2000, status: 'Pending' },
-  ];
-
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Header Background */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[styles.blob, styles.blob1, { transform: [{ translateY: blobY }] }]}
         />
         <Animated.View
           style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]}
         />
-      </View>
+      </LinearGradient>
 
       <ScrollView
         style={{ flex: 1, marginTop: insets.top }}
@@ -103,7 +133,7 @@ export default function PendingFeesScreen({ navigation }: any) {
               <Text style={styles.title}>Revenue 💰</Text>
             </View>
             <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.7}>
-              <TrendingUp color="#FFFFFF" size={20} strokeWidth={2.2} />
+              <TrendingUp color="#16A34A" size={20} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
@@ -116,7 +146,7 @@ export default function PendingFeesScreen({ navigation }: any) {
                 <Text style={styles.revenueBadgeText}>This Month</Text>
               </View>
             </View>
-            <Text style={styles.revenueAmount}>₹4,20,000</Text>
+            <Text style={styles.revenueAmount}>₹{stats.expectedRevenue.toLocaleString('en-IN')}</Text>
             
             <View style={styles.revenueDivider} />
             
@@ -126,7 +156,7 @@ export default function PendingFeesScreen({ navigation }: any) {
                   <View style={[styles.dot, { backgroundColor: colors.success }]} />
                   <Text style={styles.subRevenueLabel}>Received</Text>
                 </View>
-                <Text style={[styles.subRevenueValue, { color: colors.success }]}>₹3,75,000</Text>
+                <Text style={[styles.subRevenueValue, { color: colors.success }]}>₹{stats.received.toLocaleString('en-IN')}</Text>
               </View>
               
               <View style={styles.subRevenueDivider} />
@@ -136,7 +166,7 @@ export default function PendingFeesScreen({ navigation }: any) {
                   <View style={[styles.dot, { backgroundColor: colors.warning }]} />
                   <Text style={styles.subRevenueLabel}>Pending</Text>
                 </View>
-                <Text style={[styles.subRevenueValue, { color: colors.warning }]}>₹45,000</Text>
+                <Text style={[styles.subRevenueValue, { color: colors.warning }]}>₹{stats.pending.toLocaleString('en-IN')}</Text>
               </View>
             </View>
           </View>
@@ -186,16 +216,27 @@ export default function PendingFeesScreen({ navigation }: any) {
                 <Text style={styles.sectionTitle}>Recent Dues</Text>
                 <Text style={styles.sectionSubtitle}>Members with pending or recent payments</Text>
               </View>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate('DuesList', { dues: pendingStudents })}>
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.listContainer}>
-              {pendingStudents.map((student) => {
+              {pendingStudents.slice(0, 3).map((student) => {
                 const isPaid = student.status === 'Paid';
                 return (
-                  <View key={student.id} style={styles.studentCard}>
+                  <TouchableOpacity 
+                    key={student.id} 
+                    style={styles.studentCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (isPaid && student.transactionId) {
+                        navigation.navigate('TransactionDetails', { id: student.transactionId });
+                      } else if (!isPaid) {
+                        navigation.navigate('CollectFee', { memberId: student.id, name: student.name, amount: student.amount });
+                      }
+                    }}
+                  >
                     <View style={styles.studentLeft}>
                       <View style={[
                         styles.avatarContainer, 
@@ -217,16 +258,15 @@ export default function PendingFeesScreen({ navigation }: any) {
                           <Text style={[styles.statusText, { color: colors.success, marginLeft: 4 }]}>Paid</Text>
                         </View>
                       ) : (
-                        <TouchableOpacity 
+                        <View 
                           style={styles.collectButton} 
-                          activeOpacity={0.85}
-                          onPress={() => navigation.navigate('CollectFee')}>
+                        >
                           <Text style={styles.collectButtonText}>Collect</Text>
                           <ChevronRight color="#FFFFFF" size={14} strokeWidth={3} />
-                        </TouchableOpacity>
+                        </View>
                       )}
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -251,29 +291,28 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 300,
-    backgroundColor: colors.primary,
+    height: 320,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.2,
   },
   blob1: {
     width: 280,
     height: 280,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -120,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 100,
     left: -60,
-    opacity: 0.15,
   },
   scrollContent: {
     paddingHorizontal: spacing.l,
@@ -288,25 +327,30 @@ const styles = StyleSheet.create({
   },
   titleLabel: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '500',
+    color: '#16A34A',
+    fontWeight: '700',
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
   },
   headerIconButton: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   revenueCard: {
     backgroundColor: colors.surface,

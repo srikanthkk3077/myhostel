@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   StatusBar,
   Animated,
   Dimensions,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {
   CreditCard,
@@ -20,14 +22,46 @@ import {
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import { getMyPayments } from '../../service/merchant';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
 export default function UserPaymentsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const fetchPayments = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const response = await getMyPayments();
+      if (response.status === 200 && response.data?.success) {
+        setData(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user payments', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchPayments(true);
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchPayments(false);
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -44,20 +78,29 @@ export default function UserPaymentsScreen({ navigation }: any) {
     ]).start();
   }, []);
 
-  const transactions = [
-    { id: '1', title: 'June Rent', date: '01 Jun 2026', amount: 12500, status: 'unpaid' },
-    { id: '2', title: 'May Rent', date: '01 May 2026', amount: 12500, status: 'paid' },
-    { id: '3', title: 'Mess Fee - May', date: '01 May 2026', amount: 3000, status: 'paid' },
-    { id: '4', title: 'Security Deposit', date: '15 Apr 2026', amount: 15000, status: 'paid' },
-  ];
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading payments…
+        </Text>
+      </View>
+    );
+  }
+
+  const outstanding = data?.totalOutstanding ?? 0;
+  const dueStatus = data?.dueStatus || 'No Dues';
+  const isPaidAll = outstanding === 0;
+  const transactions = data?.transactions || [];
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       
       {/* Premium Gradient Background for Top Section */}
       <LinearGradient
-        colors={['#1E3A8A', '#3B82F6', '#60A5FA']}
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.headerBackground, { height: 320 + insets.top }]}
@@ -69,6 +112,9 @@ export default function UserPaymentsScreen({ navigation }: any) {
       <ScrollView 
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + spacing.l }]} 
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
       >
         <Animated.View
           style={{
@@ -90,34 +136,53 @@ export default function UserPaymentsScreen({ navigation }: any) {
                 <View style={styles.iconCircle}>
                   <Receipt color={colors.primary} size={20} strokeWidth={2.5} />
                 </View>
-                <View style={styles.warningBadge}>
-                  <AlertCircle color="#FFFFFF" size={14} strokeWidth={2.5} />
-                  <Text style={styles.warningText}>Due in 3 days</Text>
+                <View style={isPaidAll ? {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: colors.success,
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 20,
+                  gap: 6,
+                  shadowColor: colors.success,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 4,
+                } : styles.warningBadge}>
+                  {isPaidAll ? (
+                    <CheckCircle2 color="#FFFFFF" size={14} strokeWidth={2.5} />
+                  ) : (
+                    <AlertCircle color="#FFFFFF" size={14} strokeWidth={2.5} />
+                  )}
+                  <Text style={styles.warningText}>{dueStatus}</Text>
                 </View>
               </View>
               
               <Text style={styles.duesLabel}>TOTAL OUTSTANDING</Text>
               <View style={styles.amountRow}>
                 <Text style={styles.currencySymbol}>₹</Text>
-                <Text style={styles.duesAmount}>12,500</Text>
+                <Text style={styles.duesAmount}>{outstanding.toLocaleString('en-IN')}</Text>
               </View>
             </View>
             
-            <TouchableOpacity 
-              activeOpacity={0.9} 
-              onPress={() => navigation.navigate('Checkout')}
-            >
-              <LinearGradient
-                colors={['#3B82F6', '#2563EB']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.payNowButton}
+            {!isPaidAll && (
+              <TouchableOpacity 
+                activeOpacity={0.9} 
+                onPress={() => navigation.navigate('Checkout')}
               >
-                <CreditCard color="#FFFFFF" size={20} strokeWidth={2.5} />
-                <Text style={styles.payNowText}>Pay Securely</Text>
-                <ChevronRight color="#FFFFFF" size={20} style={{ position: 'absolute', right: 16 }} />
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#16A34A', '#15803D']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.payNowButton}
+                >
+                  <CreditCard color="#FFFFFF" size={20} strokeWidth={2.5} />
+                  <Text style={styles.payNowText}>Pay Securely</Text>
+                  <ChevronRight color="#FFFFFF" size={20} style={{ position: 'absolute', right: 16 }} />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.sectionHeaderRow}>
@@ -128,52 +193,54 @@ export default function UserPaymentsScreen({ navigation }: any) {
           </View>
           
           <View style={styles.transactionsList}>
-            {transactions.map((tx) => (
-              <View key={tx.id} style={styles.txCard}>
-                <View style={[
-                  styles.txStatusStrip,
-                  { backgroundColor: tx.status === 'paid' ? colors.success : colors.warning }
-                ]} />
-                <View style={styles.txContent}>
-                  <View style={styles.txLeft}>
-                    <View style={[
-                      styles.txIconBox,
-                      { backgroundColor: tx.status === 'paid' ? colors.successBg : colors.warningBg }
-                    ]}>
-                      {tx.status === 'paid' ? (
-                        <CheckCircle2 color={colors.success} size={22} strokeWidth={2.5} />
+            {transactions.map((tx: any) => {
+              const isPaidTx = tx.status === 'Paid';
+              return (
+                <View key={tx.id} style={styles.txCard}>
+                  <View style={[
+                    styles.txStatusStrip,
+                    { backgroundColor: isPaidTx ? colors.success : colors.warning }
+                  ]} />
+                  <View style={styles.txContent}>
+                    <View style={styles.txLeft}>
+                      <View style={[
+                        styles.txIconBox,
+                        { backgroundColor: isPaidTx ? colors.successBg : colors.warningBg }
+                      ]}>
+                        {isPaidTx ? (
+                          <CheckCircle2 color={colors.success} size={22} strokeWidth={2.5} />
+                        ) : (
+                          <AlertCircle color={colors.warning} size={22} strokeWidth={2.5} />
+                        )}
+                      </View>
+                      <View>
+                        <Text style={styles.txTitle}>{tx.title}</Text>
+                        <Text style={styles.txDate}>{tx.date}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.txRight}>
+                      <Text style={[
+                        styles.txAmount,
+                        { color: isPaidTx ? colors.text : colors.warning }
+                      ]}>₹{tx.amount}</Text>
+                      {isPaidTx ? (
+                        <TouchableOpacity 
+                          style={styles.receiptBtn}
+                          onPress={() => navigation.navigate('Receipt', { feeId: tx.id })}
+                          activeOpacity={0.7}
+                        >
+                          <Download color={colors.primary} size={14} strokeWidth={2.5} />
+                          <Text style={styles.receiptText}>Receipt</Text>
+                        </TouchableOpacity>
                       ) : (
-                        <AlertCircle color={colors.warning} size={22} strokeWidth={2.5} />
+                        <Text style={styles.pendingText}>Awaiting Payment</Text>
                       )}
                     </View>
-                    <View>
-                      <Text style={styles.txTitle}>{tx.title}</Text>
-                      <Text style={styles.txDate}>{tx.date}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.txRight}>
-                    <Text style={[
-                      styles.txAmount,
-                      { color: tx.status === 'paid' ? colors.text : colors.warning }
-                    ]}>₹{tx.amount}</Text>
-                    {tx.status === 'paid' ? (
-                      <TouchableOpacity 
-                        style={styles.receiptBtn}
-                        onPress={() => navigation.navigate('Receipt')}
-                        activeOpacity={0.7}
-                      >
-                        <Download color={colors.primary} size={14} strokeWidth={2.5} />
-                        <Text style={styles.receiptText}>Receipt</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <Text style={styles.pendingText}>Awaiting Payment</Text>
-                    )}
                   </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
-
         </Animated.View>
       </ScrollView>
     </View>
@@ -199,7 +266,7 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     borderRadius: 150,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -100,
     right: -100,
   },
@@ -208,7 +275,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 150,
     left: -50,
   },
@@ -226,21 +293,24 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.5,
   },
   helpBtn: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   helpBtnText: {
-    color: '#FFFFFF',
+    color: colors.primary,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   duesCard: {
     backgroundColor: '#FFFFFF',

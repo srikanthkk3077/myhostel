@@ -33,35 +33,36 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { registerMember, getRooms } from '../../../service/merchant';
+import { updateMember, getRooms } from '../../../service/merchant';
 import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
-export default function RegisterStudentScreen({ navigation }: any) {
+export default function EditStudentScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
+  const { member } = route.params || {};
   const [step, setStep] = useState(1);
 
   // Form State
-  const [name, setName] = useState('');
-  const [mobile, setMobile] = useState('');
-  const [parentName, setParentName] = useState('');
-  const [parentPhone, setParentPhone] = useState('');
-  const [aadhar, setAadhar] = useState('');
+  const [formData, setFormData] = useState({
+    name: member?.name || '',
+    mobile: member?.phone || '',
+    parentName: member?.parentName || '',
+    parentPhone: member?.parentPhone || '',
+    aadhar: member?.aadhar || '',
+    joiningDate: member?.joinDate || '',
+    room: member?.room || '',
+    bed: member?.bed || '',
+    deposit: member?.deposit?.toString() || '',
+    monthlyFee: member?.rent?.toString() || '',
+  });
 
-  const [joiningDate, setJoiningDate] = useState('');
-  const [room, setRoom] = useState('');
-  const [bed, setBed] = useState('');
-
-  const [deposit, setDeposit] = useState('');
-  const [monthlyFee, setMonthlyFee] = useState('');
-  
   const [isLoading, setIsLoading] = useState(false);
   const [availableRooms, setAvailableRooms] = useState<any[]>([]);
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showBedModal, setShowBedModal] = useState(false);
   
-  const selectedRoomObj = availableRooms.find(r => String(r.roomNumber) === room);
+  const selectedRoomObj = availableRooms.find(r => String(r.roomNumber) === formData.room);
 
   const fetchRooms = async () => {
     try {
@@ -98,37 +99,19 @@ export default function RegisterStudentScreen({ navigation }: any) {
     ]).start();
   }, []);
 
-  const submitForm = async () => {
-    if (!name || !mobile) {
-      Alert.alert('Error', 'Name, mobile, and room are required fields.');
-      return;
-    }
-
+  const handleSubmit = async () => {
     setIsLoading(true);
     try {
-      const payload = {
-        name,
-        mobile,
-        parentName,
-        parentPhone,
-        aadhar,
-        joiningDate,
-        room,
-        bed,
-        deposit,
-        monthlyFee,
-      };
-      
-      const response = await registerMember(payload);
-      if (response.status === 201 && response.data?.success) {
-        Alert.alert('Success', 'Member admitted successfully', [
+      const response = await updateMember(member.id, formData);
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert('Success', 'Member updated successfully', [
           { text: 'OK', onPress: () => navigation.goBack() }
         ]);
       } else {
-        Alert.alert('Failed', response.data?.message || 'Could not complete admission');
+        Alert.alert('Error', response.data?.message || 'Failed to update member');
       }
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Something went wrong');
+      Alert.alert('Error', error?.message || 'An error occurred');
     } finally {
       setIsLoading(false);
     }
@@ -136,7 +119,7 @@ export default function RegisterStudentScreen({ navigation }: any) {
 
   const nextStep = () => {
     if (step < 3) setStep(step + 1);
-    else submitForm();
+    else handleSubmit();
   };
 
   const renderStepIndicator = () => (
@@ -182,8 +165,7 @@ export default function RegisterStudentScreen({ navigation }: any) {
     label: string,
     icon: any,
     placeholder: string,
-    value: string,
-    onChange: (v: string) => void,
+    key: keyof typeof formData,
     options: any = {},
   ) => (
     <View style={styles.fieldWrapper}>
@@ -200,8 +182,8 @@ export default function RegisterStudentScreen({ navigation }: any) {
           style={styles.input}
           placeholder={placeholder}
           placeholderTextColor={colors.textTertiary}
-          value={value}
-          onChangeText={onChange}
+          value={formData[key]}
+          onChangeText={(v) => setFormData({ ...formData, [key]: v })}
           {...options}
         />
       </View>
@@ -220,7 +202,7 @@ export default function RegisterStudentScreen({ navigation }: any) {
             onPress={() => (step > 1 ? setStep(step - 1) : navigation.goBack())}>
             <ArrowLeft color={colors.text} size={24} strokeWidth={2.5} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Admission</Text>
+          <Text style={styles.headerTitle}>Edit Member</Text>
           <View style={{ width: 40 }} />
         </View>
         {renderStepIndicator()}
@@ -252,19 +234,19 @@ export default function RegisterStudentScreen({ navigation }: any) {
                     </TouchableOpacity>
                   </View>
 
-                  {renderInput('Full Name', User, 'e.g. John Doe', name, setName, {
+                  {renderInput('Full Name', User, 'e.g. John Doe', 'name', {
                     autoCapitalize: 'words',
                   })}
-                  {renderInput('Mobile Number', Phone, '+91 98765 43210', mobile, setMobile, {
+                  {renderInput('Mobile Number', Phone, '+91 98765 43210', 'mobile', {
                     keyboardType: 'phone-pad',
                   })}
-                  {renderInput('Parent/Guardian Name', User, 'e.g. Richard Doe', parentName, setParentName, {
+                  {renderInput('Parent/Guardian Name', User, 'e.g. Richard Doe', 'parentName', {
                     autoCapitalize: 'words',
                   })}
-                  {renderInput('Parent Phone', Phone, '+91 98765 43210', parentPhone, setParentPhone, {
+                  {renderInput('Parent Phone', Phone, '+91 98765 43210', 'parentPhone', {
                     keyboardType: 'phone-pad',
                   })}
-                  {renderInput('Aadhar / ID Number', CreditCard, 'e.g. 1234 5678 9012', aadhar, setAadhar, {
+                  {renderInput('Aadhar / ID Number', CreditCard, 'e.g. 1234 5678 9012', 'aadhar', {
                     keyboardType: 'numeric',
                   })}
                 </View>
@@ -277,7 +259,7 @@ export default function RegisterStudentScreen({ navigation }: any) {
                     Assign a room and bed to the member
                   </Text>
 
-                  {renderInput('Joining Date', Calendar, 'DD/MM/YYYY', joiningDate, setJoiningDate)}
+                  {renderInput('Joining Date', Calendar, 'DD/MM/YYYY', 'joiningDate')}
                   
                   <View style={styles.fieldWrapper}>
                     <Text style={styles.label}>Select Room</Text>
@@ -286,8 +268,8 @@ export default function RegisterStudentScreen({ navigation }: any) {
                       activeOpacity={0.7}
                       onPress={() => setShowRoomModal(true)}>
                       <Building2 color={colors.textTertiary} size={20} />
-                      <Text style={[styles.input, { color: room ? colors.text : colors.textTertiary, marginTop: Platform.OS === 'ios' ? 0 : 4, }]}>
-                        {room ? `Room ${room}` : 'Tap to select room'}
+                      <Text style={[styles.input, { color: formData.room ? colors.text : colors.textTertiary, marginTop: Platform.OS === 'ios' ? 0 : 4, }]}>
+                        {formData.room ? `Room ${formData.room}` : 'Tap to select room'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -295,13 +277,13 @@ export default function RegisterStudentScreen({ navigation }: any) {
                   <View style={styles.fieldWrapper}>
                     <Text style={styles.label}>Assign Bed</Text>
                     <TouchableOpacity
-                      style={[styles.inputContainer, !room && { opacity: 0.5 }]}
+                      style={[styles.inputContainer, !formData.room && { opacity: 0.5 }]}
                       activeOpacity={0.7}
-                      disabled={!room}
+                      disabled={!formData.room}
                       onPress={() => setShowBedModal(true)}>
                       <BedDouble color={colors.textTertiary} size={20} />
-                      <Text style={[styles.input, { color: bed ? colors.text : colors.textTertiary, marginTop: Platform.OS === 'ios' ? 0 : 4, }]}>
-                        {bed ? bed : 'Tap to assign bed'}
+                      <Text style={[styles.input, { color: formData.bed ? colors.text : colors.textTertiary, marginTop: Platform.OS === 'ios' ? 0 : 4, }]}>
+                        {formData.bed ? formData.bed : 'Tap to assign bed'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -315,10 +297,10 @@ export default function RegisterStudentScreen({ navigation }: any) {
                     Set up the security deposit and monthly rent
                   </Text>
 
-                  {renderInput('Security Deposit', Wallet, 'e.g. 5000', deposit, setDeposit, {
+                  {renderInput('Security Deposit', Wallet, 'e.g. 5000', 'deposit', {
                     keyboardType: 'numeric',
                   })}
-                  {renderInput('Monthly Rent', Wallet, 'e.g. 12000', monthlyFee, setMonthlyFee, {
+                  {renderInput('Monthly Rent', Wallet, 'e.g. 12000', 'monthlyFee', {
                     keyboardType: 'numeric',
                   })}
                 </View>
@@ -336,7 +318,7 @@ export default function RegisterStudentScreen({ navigation }: any) {
                   ) : (
                     <>
                       <Text style={styles.nextButtonText}>
-                        {step === 3 ? 'Complete Admission' : 'Continue'}
+                        {step === 3 ? 'Save Changes' : 'Continue'}
                       </Text>
                       {step === 3 ? (
                         <Check color="#FFFFFF" size={18} strokeWidth={2.5} />
@@ -367,19 +349,17 @@ export default function RegisterStudentScreen({ navigation }: any) {
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-              {availableRooms.filter(r => r.roomCapacity - r.occupants > 0).map((r) => (
+              {availableRooms.filter(r => r.roomCapacity - r.occupants > 0 || String(r.roomNumber) === formData.room).map((r) => (
                 <TouchableOpacity
                   key={r._id}
-                  style={[styles.modalItem, room === String(r.roomNumber) && styles.modalItemActive]}
+                  style={[styles.modalItem, formData.room === String(r.roomNumber) && styles.modalItemActive]}
                   onPress={() => {
-                    setRoom(String(r.roomNumber));
-                    setBed(''); // reset bed
-                    setMonthlyFee(String(r.pricePerMonth));
+                    setFormData({ ...formData, room: String(r.roomNumber), bed: '', monthlyFee: String(r.pricePerMonth) });
                     setShowRoomModal(false);
                   }}>
-                  <Home color={room === String(r.roomNumber) ? colors.primary : colors.textSecondary} size={20} />
+                  <Home color={formData.room === String(r.roomNumber) ? colors.primary : colors.textSecondary} size={20} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.modalItemTitle, room === String(r.roomNumber) && { color: colors.primary }]}>
+                    <Text style={[styles.modalItemTitle, formData.room === String(r.roomNumber) && { color: colors.primary }]}>
                       Room {r.roomNumber}
                     </Text>
                     <Text style={styles.modalItemSubtitle}>{r.roomType}</Text>
@@ -409,18 +389,18 @@ export default function RegisterStudentScreen({ navigation }: any) {
             <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
               {selectedRoomObj && Array.from({ length: selectedRoomObj.roomCapacity }).map((_, i) => {
                 const bedName = `Bed ${i + 1}`;
-                const isOccupied = selectedRoomObj.members?.some((m: any) => m.bed === bedName);
+                const isOccupied = selectedRoomObj.members?.some((m: any) => m.bed === bedName && m._id !== member.id);
                 if (isOccupied) return null;
                 return (
                   <TouchableOpacity
                     key={i}
-                    style={[styles.modalItem, bed === bedName && styles.modalItemActive]}
+                    style={[styles.modalItem, formData.bed === bedName && styles.modalItemActive]}
                     onPress={() => {
-                      setBed(bedName);
+                      setFormData({ ...formData, bed: bedName });
                       setShowBedModal(false);
                     }}>
-                    <BedDouble color={bed === bedName ? colors.primary : colors.textSecondary} size={20} />
-                    <Text style={[styles.modalItemTitle, bed === bedName && { color: colors.primary }]}>
+                    <BedDouble color={formData.bed === bedName ? colors.primary : colors.textSecondary} size={20} />
+                    <Text style={[styles.modalItemTitle, formData.bed === bedName && { color: colors.primary }]}>
                       {bedName}
                     </Text>
                   </TouchableOpacity>
@@ -516,7 +496,7 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: colors.border,
     marginHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: 1,
   },
   stepLineActive: {
     backgroundColor: colors.primary,

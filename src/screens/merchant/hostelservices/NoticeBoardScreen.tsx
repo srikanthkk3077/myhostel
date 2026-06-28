@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -16,36 +18,69 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { getNotices } from '../../../service/noticeService';
+
+const formatTime = (dateString: string) => {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  let timeStr = '';
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  timeStr = `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+
+  if (diffDays === 0 && now.getDate() === d.getDate()) {
+    return `Today, ${timeStr}`;
+  } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== d.getDate())) {
+    return `Yesterday, ${timeStr}`;
+  } else if (diffDays < 7) {
+    return `${diffDays} days ago`;
+  } else {
+    const standardMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d.getDate()} ${standardMonths[d.getMonth()]} ${d.getFullYear()}`;
+  }
+};
 
 export default function NoticeBoardScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [notices, setNotices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const notices = [
-    {
-      id: '1',
-      title: 'Water Supply Maintenance',
-      message: 'There will be no water supply on 3rd Floor between 10 AM and 2 PM tomorrow due to overhead tank cleaning.',
-      date: 'Today, 08:30 AM',
-      type: 'Urgent',
-      author: 'Warden',
-    },
-    {
-      id: '2',
-      title: 'Monthly Fees Reminder',
-      message: 'Please clear your pending hostel fees for the current month before the 10th to avoid late fines.',
-      date: 'Yesterday, 10:00 AM',
-      type: 'Important',
-      author: 'Admin',
-    },
-    {
-      id: '3',
-      title: 'Upcoming Festival Celebration',
-      message: 'We are organizing a small get-together this weekend in the common area. Snacks will be provided!',
-      date: '12 Oct, 04:15 PM',
-      type: 'Normal',
-      author: 'Cultural Committee',
-    },
-  ];
+  const fetchNotices = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const response = await getNotices();
+      if (response.status === 200 && response.data?.success) {
+        setNotices(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch merchant notices', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchNotices(true);
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchNotices(false);
+  };
 
   const getIconForType = (type: string) => {
     switch (type) {
@@ -62,6 +97,18 @@ export default function NoticeBoardScreen({ navigation }: any) {
       default: return colors.primary;
     }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 12, color: colors.textSecondary, fontWeight: '600' }}>
+          Loading notices…
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -87,35 +134,53 @@ export default function NoticeBoardScreen({ navigation }: any) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {notices.map((notice, index) => {
-          const Icon = getIconForType(notice.type);
-          const iconColor = getColorForType(notice.type);
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
+      >
+        {notices.length === 0 ? (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 80 }}>
+            <Bell color={colors.textTertiary} size={64} strokeWidth={1.5} />
+            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginTop: spacing.l }}>
+              No notices published
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: spacing.s, textAlign: 'center', paddingHorizontal: spacing.xl }}>
+              Publish an announcement to inform your residents.
+            </Text>
+          </View>
+        ) : (
+          notices.map((notice) => {
+            const Icon = getIconForType(notice.type);
+            const iconColor = getColorForType(notice.type);
 
-          return (
-            <View key={notice.id} style={styles.noticeCard}>
-              <View style={styles.cardHeader}>
-                <View style={styles.authorBox}>
-                  <View style={[styles.iconBox, { backgroundColor: `${iconColor}15` }]}>
-                    <Icon color={iconColor} size={18} strokeWidth={2.5} />
+            return (
+              <View key={notice._id} style={styles.noticeCard}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.authorBox}>
+                    <View style={[styles.iconBox, { backgroundColor: `${iconColor}15` }]}>
+                      <Icon color={iconColor} size={18} strokeWidth={2.5} />
+                    </View>
+                    <View>
+                      <Text style={styles.authorName}>{notice.author}</Text>
+                      <Text style={styles.dateText}>{formatTime(notice.createdAt)}</Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={styles.authorName}>{notice.author}</Text>
-                    <Text style={styles.dateText}>{notice.date}</Text>
-                  </View>
+                  {notice.type !== 'Normal' && (
+                    <View style={[styles.typeBadge, { backgroundColor: iconColor }]}>
+                      <Text style={styles.typeBadgeText}>{notice.type}</Text>
+                    </View>
+                  )}
                 </View>
-                {notice.type !== 'Normal' && (
-                  <View style={[styles.typeBadge, { backgroundColor: iconColor }]}>
-                    <Text style={styles.typeBadgeText}>{notice.type}</Text>
-                  </View>
-                )}
-              </View>
 
-              <Text style={styles.noticeTitle}>{notice.title}</Text>
-              <Text style={styles.noticeMessage}>{notice.message}</Text>
-            </View>
-          );
-        })}
+                <Text style={styles.noticeTitle}>{notice.title}</Text>
+                <Text style={styles.noticeMessage}>{notice.message}</Text>
+              </View>
+            );
+          })
+        )}
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StatusBar,
   Animated,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -23,18 +24,89 @@ import {
   Phone,
   Calendar,
   IndianRupee,
+  AlertTriangle,
+  ArrowRight,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { deleteRoom, getRoomById } from '../../../service/merchant';
+import LinearGradient from 'react-native-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
 export default function RoomDetailsScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { room } = route.params;
-  const isFull = room.occupants === room.capacity;
-  const vacant = room.capacity - room.occupants;
-  const progressPercentage = (room.occupants / room.capacity) * 100;
+  const initialRoom = route.params.room;
+
+  // Live room state — starts from route params, refreshed on focus
+  const [room, setRoom] = useState<any>(initialRoom);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchRoom = async () => {
+    if (!initialRoom._id) return;
+    try {
+      setIsRefreshing(true);
+      const res = await getRoomById(initialRoom._id);
+      if (res.status === 200 && res.data?.success) {
+        const r = res.data.data;
+        const assignedMembers = r.members || [];
+        const mappedBeds: any[] = [];
+
+        assignedMembers.forEach((m: any) => {
+          let bedId = m.bed || '';
+          if (bedId.startsWith('Bed ')) {
+            bedId = bedId.replace('Bed ', '');
+          }
+          mappedBeds.push({
+            id: bedId || String(mappedBeds.length + 1),
+            status: 'Occupied',
+            student: m.name,
+            memberId: m._id,
+          });
+        });
+
+        const capacity = r.roomCapacity || 2;
+        let nextVacantId = 1;
+        while (mappedBeds.length < capacity) {
+          while (mappedBeds.some((b: any) => String(b.id) === String(nextVacantId))) {
+            nextVacantId++;
+          }
+          mappedBeds.push({ id: String(nextVacantId), status: 'Vacant' });
+          nextVacantId++;
+        }
+
+        mappedBeds.sort((a: any, b: any) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+
+        setRoom({
+          _id: r._id,
+          id: String(r.roomNumber),
+          type: r.roomType || 'Standard',
+          isAC: r.roomType?.toLowerCase().includes('ac') && !r.roomType?.toLowerCase().includes('non-ac'),
+          capacity: r.roomCapacity || 2,
+          occupants: r.occupants || 0,
+          floor: Number(r.floor) || 1,
+          price: r.pricePerMonth || 0,
+          beds: mappedBeds,
+        });
+      }
+    } catch (e) {
+      console.log('Error refreshing room:', e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchRoom();
+    }, [])
+  );
+
+  const isFull = room.occupants >= room.capacity;
+  const isOverCapacity = room.occupants > room.capacity;
+  const vacant = Math.max(0, room.capacity - room.occupants);
+  const progressPercentage = Math.min(100, (room.occupants / room.capacity) * 100);
   const progressColor = isFull ? colors.danger : room.occupants >= room.capacity * 0.7 ? colors.warning : colors.success;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -61,6 +133,11 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
   });
 
   const handleDelete = () => {
+    if (!room._id) {
+      Alert.alert('Error', 'Room ID is missing. Please refresh the rooms list.');
+      return;
+    }
+
     Alert.alert(
       'Delete Room',
       `Are you sure you want to delete Room ${room.id}?`,
@@ -69,28 +146,53 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => navigation.goBack(),
+          onPress: async () => {
+            try {
+              const response = await deleteRoom(room._id);
+              if (response.status === 200 && response.data?.success) {
+                Alert.alert('Success', 'Room deleted', [
+                  { text: 'OK', onPress: () => navigation.navigate('RoomsList') } // navigate back to rooms tab
+                ]);
+              } else {
+                Alert.alert('Failed', response.data?.message || 'Could not delete room');
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error?.message || 'Something went wrong');
+            }
+          },
         },
       ],
     );
   };
 
-  const getInitials = (name: string) =>
-    name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+  const getInitials = (name: string) => {
+    if (!name) return '??';
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Animated Header */}
-      <View style={styles.headerBackground}>
+      <LinearGradient
+        colors={['#F0FDF4', '#DCFCE7', '#BBF7D0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerBackground}
+      >
         <Animated.View
           style={[styles.blob, styles.blob1, { transform: [{ translateY: blobY }] }]}
         />
         <Animated.View
           style={[styles.blob, styles.blob2, { transform: [{ translateY: blobY }] }]}
         />
-      </View>
+      </LinearGradient>
 
 
 
@@ -108,7 +210,7 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
             <TouchableOpacity
               style={styles.iconButton}
               onPress={() => navigation.goBack()}>
-              <ArrowLeft color="#FFFFFF" size={20} strokeWidth={2.5} />
+              <ArrowLeft color="#16A34A" size={20} strokeWidth={2.5} />
             </TouchableOpacity>
             <Text style={styles.topBarTitle}>Room Details</Text>
             <View style={styles.topBarActions}>
@@ -116,10 +218,10 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
                 style={styles.iconButton}
                 onPress={() => navigation.navigate('EditRoom', { room })}
                 activeOpacity={0.7}>
-                <Edit2 color="#FFFFFF" size={18} strokeWidth={2.2} />
+                <Edit2 color="#16A34A" size={18} strokeWidth={2.2} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconButton} onPress={handleDelete}>
-                <Trash2 color="#FFFFFF" size={18} strokeWidth={2.2} />
+                <Trash2 color="#16A34A" size={18} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
           </View>
@@ -155,7 +257,7 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
                     styles.statusText,
                     { color: isFull ? colors.danger : colors.success },
                   ]}>
-                  {isFull ? 'Full' : `${vacant} Free`}
+                  {isFull ? (room.occupants > room.capacity ? 'Over capacity' : 'Full') : `${vacant} Free`}
                 </Text>
               </View>
             </View>
@@ -176,6 +278,19 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
               </View>
             </View>
           </View>
+
+          {/* Over-capacity warning banner */}
+          {isOverCapacity && (
+            <View style={styles.overCapacityBanner}>
+              <AlertTriangle color="#B45309" size={20} strokeWidth={2.5} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.overCapacityTitle}>Room is Over Capacity!</Text>
+                <Text style={styles.overCapacityMsg}>
+                  {room.occupants - room.capacity} member(s) must be transferred to another room.
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Stats Card */}
           <View style={styles.statsCard}>
@@ -227,56 +342,88 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
           <View style={styles.bedsSection}>
             <View style={styles.bedsHeader}>
               <Text style={styles.bedsTitle}>Bed Assignments</Text>
-              <TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  // Find the first available bed
+                  const firstVacant = room.beds.find((b: any) => b.status !== 'Occupied');
+                  const bedId = firstVacant ? `Bed ${firstVacant.id}` : `Bed 1`;
+                  navigation.navigate('AssignMember', { room, bedId });
+                }}>
                 <Text style={styles.seeAllText}>Manage</Text>
               </TouchableOpacity>
             </View>
 
             {room.beds.map((bed: any, index: number) => {
               const isOccupied = bed.status === 'Occupied';
+              // A bed is "over capacity" if its index is >= the room's capacity
+              const isExtraBed = index >= room.capacity;
               return (
-                <View key={bed.id} style={styles.bedCard}>
+                <View key={`${bed.id}-${index}`} style={[
+                  styles.bedCard,
+                  isExtraBed && styles.bedCardOverCapacity,
+                ]}>
                   <View style={styles.bedCardLeft}>
                     <View
                       style={[
                         styles.bedIcon,
                         {
-                          backgroundColor: isOccupied ? colors.primaryBg : colors.successBg,
+                          backgroundColor: isExtraBed ? '#FEF3C7' : (isOccupied ? colors.primaryBg : colors.successBg),
                         },
                       ]}>
                       <BedDouble
-                        color={isOccupied ? colors.primary : colors.success}
+                        color={isExtraBed ? '#B45309' : (isOccupied ? colors.primary : colors.success)}
                         size={22}
                         strokeWidth={2.5}
                       />
                     </View>
                     <View>
                       <Text style={styles.bedName}>Bed {bed.id}</Text>
-                      <Text style={styles.bedType}>
-                        {isOccupied ? 'Occupied' : 'Available'}
+                      <Text style={[styles.bedType, isExtraBed && { color: '#B45309' }]}>
+                        {isExtraBed ? '⚠️ Must Transfer' : (isOccupied ? 'Occupied' : 'Available')}
                       </Text>
                     </View>
                   </View>
 
                   {isOccupied ? (
-                    <View style={styles.occupantSection}>
-                      <View style={styles.occupantAvatar}>
-                        <Text style={styles.occupantInitials}>
-                          {getInitials(bed.student)}
-                        </Text>
-                      </View>
-                      <View style={styles.occupantInfo}>
-                        <Text style={styles.occupantName}>{bed.student}</Text>
-                        <View style={styles.occupantMeta}>
-                          <Calendar color={colors.textTertiary} size={11} strokeWidth={2.2} />
-                          <Text style={styles.occupantMetaText}>Since Jan 2026</Text>
+                    isExtraBed ? (
+                      // Show Transfer button for over-capacity occupied beds
+                      <TouchableOpacity
+                        style={styles.transferButton}
+                        activeOpacity={0.8}
+                        onPress={() => navigation.navigate('TransferMember', {
+                          member: { _id: bed.memberId, name: bed.student, bed: `Bed ${bed.id}` },
+                          currentRoom: room,
+                        })}>
+                        <ArrowRight color="#B45309" size={14} strokeWidth={2.5} />
+                        <Text style={styles.transferButtonText}>Transfer</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.occupantSection}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (bed.memberId) {
+                            navigation.navigate('StudentDetails', { memberId: bed.memberId });
+                          }
+                        }}>
+                        <View style={styles.occupantAvatar}>
+                          <Text style={styles.occupantInitials}>
+                            {getInitials(bed.student)}
+                          </Text>
                         </View>
-                      </View>
-                    </View>
+                        <View style={styles.occupantInfo}>
+                          <Text style={styles.occupantName}>{bed.student}</Text>
+                          <View style={styles.occupantMeta}>
+                            <Calendar color={colors.textTertiary} size={11} strokeWidth={2.2} />
+                            <Text style={styles.occupantMetaText}>Since Jan 2026</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    )
                   ) : (
                     <TouchableOpacity
                       style={styles.assignButton}
-                      onPress={() => navigation.navigate('AssignMember', { room, bedId: bed.id })}
+                      onPress={() => navigation.navigate('AssignMember', { room, bedId: `Bed ${bed.id}` })}
                       activeOpacity={0.8}>
                       <User color={colors.primary} size={14} strokeWidth={2.5} />
                       <Text style={styles.assignButtonText}>Assign</Text>
@@ -339,29 +486,28 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 240,
-    backgroundColor: colors.primary,
+    height: 280,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
   blob: {
     position: 'absolute',
     borderRadius: 200,
-    opacity: 0.2,
   },
   blob1: {
     width: 260,
     height: 260,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: 'rgba(255,255,255,0.6)',
     top: -120,
     right: -80,
   },
   blob2: {
     width: 200,
     height: 200,
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255,255,255,0.4)',
     top: 60,
     left: -60,
-    opacity: 0.15,
   },
   topBar: {
     flexDirection: 'row',
@@ -375,16 +521,19 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   topBarTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.text,
     letterSpacing: -0.3,
   },
   topBarActions: {
@@ -713,5 +862,48 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
     lineHeight: 14,
+  },
+  overCapacityBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 16,
+    padding: spacing.m,
+    marginBottom: spacing.m,
+    gap: spacing.m,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  overCapacityTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  overCapacityMsg: {
+    fontSize: 12,
+    color: '#B45309',
+    fontWeight: '500',
+  },
+  bedCardOverCapacity: {
+    borderWidth: 1.5,
+    borderColor: '#FCD34D',
+    backgroundColor: '#FFFBEB',
+  },
+  transferButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  transferButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#B45309',
   },
 });
