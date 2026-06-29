@@ -12,6 +12,7 @@ import {
   Platform,
   Share,
   Alert,
+  Modal,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
@@ -31,16 +32,20 @@ import {
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import { getMembers } from '../../../service/merchant';
+import { getMembers, getRooms } from '../../../service/merchant';
 
 const { width } = Dimensions.get('window');
 
 export default function StudentsListScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
+  const [isFilterModalVisible, setFilterModalVisible] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'active' | 'pending'>('all');
+  const [selectedFloorFilter, setSelectedFloorFilter] = useState<string>('All');
+  const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('All');
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<any[]>([]);
+  const [rooms, setRooms] = useState<any[]>([]);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -85,13 +90,13 @@ export default function StudentsListScreen({ navigation }: any) {
     ).start();
   }, []);
 
-  const fetchMembers = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const response = await getMembers();
-      if (response.status === 200 && response.data?.success) {
+      const [membersRes, roomsRes] = await Promise.all([getMembers(), getRooms()]);
+      if (membersRes.status === 200 && membersRes.data?.success) {
         // Map backend response to match expected frontend structure if needed
-        const mappedStudents = (response.data.data || []).map((m: any) => ({
+        const mappedStudents = (membersRes.data.data || []).map((m: any) => ({
           id: m._id,
           name: m.name,
           room: m.room,
@@ -101,8 +106,11 @@ export default function StudentsListScreen({ navigation }: any) {
         }));
         setStudents(mappedStudents);
       }
+      if (roomsRes.status === 200 && roomsRes.data?.success) {
+        setRooms(roomsRes.data.data || []);
+      }
     } catch (error: any) {
-      console.error('Error fetching members:', error);
+      console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
@@ -110,7 +118,7 @@ export default function StudentsListScreen({ navigation }: any) {
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchMembers();
+      fetchData();
     }, [])
   );
 
@@ -124,15 +132,62 @@ export default function StudentsListScreen({ navigation }: any) {
     outputRange: [-width, width],
   });
 
+  const roomToFloorMap = rooms.reduce((acc, room) => {
+    acc[room.roomNumber] = String(room.floor);
+    return acc;
+  }, {} as Record<string, string>);
+
+  const getStudentFloor = (studentRoom: string) => {
+    if (!studentRoom || studentRoom === 'Unassigned') return 'Unassigned';
+    return roomToFloorMap[studentRoom] || 'Unknown';
+  };
+
+  const availableFloors = Array.from(new Set(students.map(s => getStudentFloor(s.room)))).sort((a, b) => {
+    if (a === 'Unassigned' || a === 'Unknown') return 1;
+    if (b === 'Unassigned' || b === 'Unknown') return -1;
+    return a.localeCompare(b, undefined, { numeric: true });
+  });
+
+  const availableRooms = Array.from(new Set(students.filter(s => {
+      const floor = getStudentFloor(s.room);
+      return selectedFloorFilter === 'All' || floor === selectedFloorFilter;
+  }).map(s => s.room || 'Unassigned'))).sort((a, b) => {
+    if (a === 'Unassigned') return 1;
+    if (b === 'Unassigned') return -1;
+    return a.localeCompare(b, undefined, { numeric: true });
+  });
+
   const filteredStudents = students.filter((student) => {
     const matchesSearch =
       student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.room.toLowerCase().includes(searchQuery.toLowerCase());
+      student.room?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter =
       filterType === 'all' ||
       (filterType === 'active' && student.status === 'Active') ||
       (filterType === 'pending' && student.status === 'Pending Fee');
-    return matchesSearch && matchesFilter;
+      
+    const studentFloor = getStudentFloor(student.room);
+    const matchesFloor = selectedFloorFilter === 'All' || studentFloor === selectedFloorFilter;
+    const matchesRoom = selectedRoomFilter === 'All' || (student.room || 'Unassigned') === selectedRoomFilter;
+    
+    return matchesSearch && matchesFilter && matchesFloor && matchesRoom;
+  });
+
+  const hasActiveFilters = searchQuery !== '' || filterType !== 'all' || selectedFloorFilter !== 'All' || selectedRoomFilter !== 'All';
+
+  const groupedStudents = filteredStudents.reduce((acc, student) => {
+    const room = student.room || 'Unassigned';
+    if (!acc[room]) {
+      acc[room] = [];
+    }
+    acc[room].push(student);
+    return acc;
+  }, {} as Record<string, typeof students>);
+
+  const sortedRooms = Object.keys(groupedStudents).sort((a, b) => {
+    if (a === 'Unassigned') return 1;
+    if (b === 'Unassigned') return -1;
+    return a.localeCompare(b, undefined, { numeric: true });
   });
 
   const getInitials = (name: string) =>
@@ -290,7 +345,7 @@ export default function StudentsListScreen({ navigation }: any) {
               <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.7} onPress={handleExport}>
                 <Download color="#16A34A" size={20} strokeWidth={2.2} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.7} onPress={() => setFilterModalVisible(true)}>
                 <Filter color="#16A34A" size={20} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
@@ -336,47 +391,38 @@ export default function StudentsListScreen({ navigation }: any) {
             />
           </View>
 
-          {/* Filter Pills */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}>
-            {[
-              { id: 'all', label: 'All Members' },
-              { id: 'active', label: 'Active' },
-              { id: 'pending', label: 'Pending Fee' },
-            ].map((filter) => (
-              <TouchableOpacity
-                key={filter.id}
-                style={[
-                  styles.filterPill,
-                  filterType === filter.id && styles.filterPillActive,
-                ]}
-                activeOpacity={0.7}
-                onPress={() => setFilterType(filter.id as any)}>
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    filterType === filter.id && styles.filterPillTextActive,
-                  ]}>
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
           {/* Section Title */}
           <View style={styles.listHeader}>
             <Text style={styles.listCountTitle}>
               {filteredStudents.length} Member{filteredStudents.length !== 1 ? 's' : ''}
             </Text>
-            <Text style={styles.sectionSubtitle}>Tap to view profile</Text>
+            <TouchableOpacity 
+              activeOpacity={0.7}
+              disabled={!hasActiveFilters}
+              onPress={() => {
+                setSearchQuery('');
+                setFilterType('all');
+                setSelectedFloorFilter('All');
+                setSelectedRoomFilter('All');
+              }}
+              style={{ opacity: hasActiveFilters ? 1 : 0.4 }}
+            >
+              <Text style={{color: colors.primary, fontWeight: '600', fontSize: 13}}>Clear Filters</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Students List */}
           {loading 
             ? [1, 2, 3, 4, 5].map(k => renderSkeletonCard(k))
-            : filteredStudents.map((student, idx) => renderStudentCard(student, idx))
+            : sortedRooms.map(room => (
+                <View key={room} style={styles.roomGroupContainer}>
+                  <View style={styles.roomHeaderContainer}>
+                    <Text style={styles.roomHeaderText}>{room === 'Unassigned' ? room : `Room ${room}`}</Text>
+                    <View style={styles.roomHeaderLine} />
+                  </View>
+                  {groupedStudents[room].map((student, idx) => renderStudentCard(student, idx))}
+                </View>
+              ))
           }
 
           {/* Empty space for FAB */}
@@ -384,12 +430,93 @@ export default function StudentsListScreen({ navigation }: any) {
         </Animated.View>
       </ScrollView>
 
+      {/* Filter Modal */}
+      <Modal
+        visible={isFilterModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setFilterModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Filter Members</Text>
+              <TouchableOpacity onPress={() => setFilterModalVisible(false)} style={styles.modalCloseButton}>
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScrollContent}>
+              
+              <Text style={styles.filterSectionTitle}>Status</Text>
+              <View style={styles.modalFilterRow}>
+                {[{ id: 'all', label: 'All Members' }, { id: 'active', label: 'Active' }, { id: 'pending', label: 'Pending Fee' }].map((filter) => (
+                  <TouchableOpacity
+                    key={filter.id}
+                    style={[styles.filterPill, filterType === filter.id && styles.filterPillActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setFilterType(filter.id as any)}>
+                    <Text style={[styles.filterPillText, filterType === filter.id && styles.filterPillTextActive]}>
+                      {filter.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {availableFloors.length > 0 && availableFloors.some(f => f !== 'Unassigned' && f !== 'Unknown') && (
+                <>
+                  <Text style={styles.filterSectionTitle}>Floor</Text>
+                  <View style={styles.modalFilterRow}>
+                    {['All', ...availableFloors].map((floor) => (
+                      <TouchableOpacity
+                        key={floor}
+                        style={[styles.filterPill, selectedFloorFilter === floor && styles.filterPillActive]}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          setSelectedFloorFilter(floor);
+                          setSelectedRoomFilter('All');
+                        }}>
+                        <Text style={[styles.filterPillText, selectedFloorFilter === floor && styles.filterPillTextActive]}>
+                          {floor === 'All' ? 'All Floors' : (floor === 'Unassigned' || floor === 'Unknown' ? floor : `Floor ${floor}`)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {availableRooms.length > 0 && (
+                <>
+                  <Text style={styles.filterSectionTitle}>Room</Text>
+                  <View style={styles.modalFilterRow}>
+                    {['All', ...availableRooms].map((room) => (
+                      <TouchableOpacity
+                        key={room}
+                        style={[styles.filterPill, selectedRoomFilter === room && styles.filterPillActive]}
+                        activeOpacity={0.7}
+                        onPress={() => setSelectedRoomFilter(room)}>
+                        <Text style={[styles.filterPillText, selectedRoomFilter === room && styles.filterPillTextActive]}>
+                          {room === 'All' ? 'All Rooms' : (room === 'Unassigned' ? room : `Room ${room}`)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+            </ScrollView>
+            
+            <TouchableOpacity style={styles.applyFilterButton} activeOpacity={0.8} onPress={() => setFilterModalVisible(false)}>
+              <Text style={styles.applyFilterButtonText}>Show Results</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Floating Add Button */}
       <TouchableOpacity
         style={styles.fab}
         activeOpacity={0.9}
         onPress={() => navigation.navigate('RegisterStudent')}>
-        <Plus color="#FFFFFF" size={28} strokeWidth={2.5} />
+        <Plus color="#FFF" size={28} strokeWidth={3} />
       </TouchableOpacity>
     </View>
   );
@@ -554,12 +681,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
   },
-  filterRow: {
-    flexDirection: 'row',
-    gap: spacing.s,
-    marginBottom: spacing.l,
-    paddingRight: spacing.l,
-  },
   filterPill: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -579,19 +700,6 @@ const styles = StyleSheet.create({
   },
   filterPillTextActive: {
     color: '#FFFFFF',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: spacing.m,
-    paddingHorizontal: 2,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    letterSpacing: -0.3,
   },
   sectionSubtitle: {
     fontSize: 12,
@@ -727,5 +835,95 @@ const styles = StyleSheet.create({
   listCountTitle:{
     color: colors.textSecondary,
     fontWeight: '500',
-  }
+  },
+  roomGroupContainer: {
+    marginBottom: spacing.m,
+  },
+  roomHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.s,
+    marginTop: spacing.xs,
+  },
+  roomHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  roomHeaderLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+    marginLeft: spacing.m,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: spacing.l,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.l,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  modalScrollContent: {
+    paddingBottom: spacing.xl,
+  },
+  filterSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: spacing.m,
+  },
+  modalFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.s,
+    marginBottom: spacing.l,
+  },
+  applyFilterButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginTop: spacing.s,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  applyFilterButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });

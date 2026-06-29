@@ -27,7 +27,7 @@ declare module "axios" {
 // BASE URL
 // ==============================
 
-const BASE_URL = "http://localhost:8000/"
+const BASE_URL = "https://my-hostelbe.onrender.com/"
 // const BASE_URL = "http://localhost:3000/";
 // const BASE_URL = 'https://server.vydhyo.com/';
 
