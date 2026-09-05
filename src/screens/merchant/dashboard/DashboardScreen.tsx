@@ -248,7 +248,7 @@ export default function DashboardScreen({ navigation }: any) {
           </View>
 
           {/* ── Trial Banner ─────────────────────────────────────────────── */}
-          {isBannerVisible && (
+          {/* {isBannerVisible && (
             <View style={styles.trialBanner}>
               <View style={styles.trialBannerLeft}>
                 <View style={styles.trialIconBg}>
@@ -276,7 +276,7 @@ export default function DashboardScreen({ navigation }: any) {
                 )}
               </View>
             </View>
-          )}
+          )} */}
 
           {/* ── Today's Overview Card ────────────────────────────────────── */}
           <View style={styles.welcomeCard}>

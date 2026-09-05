@@ -122,8 +122,11 @@ export default function DuesListScreen({ navigation, route }: any) {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
         }
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const isPaid = item.status === 'Paid';
+          const dueVal = item.dueAmount ?? item.amount ?? 4500;
+          const formattedAmount = typeof dueVal === 'number' ? dueVal.toLocaleString('en-IN') : dueVal;
+          const itemId = item.id || item._id || `due-item-${index}`;
           return (
             <TouchableOpacity 
               style={styles.studentCard}
@@ -132,7 +135,7 @@ export default function DuesListScreen({ navigation, route }: any) {
                 if (isPaid && item.transactionId) {
                   navigation.navigate('TransactionDetails', { id: item.transactionId });
                 } else if (!isPaid) {
-                  navigation.navigate('CollectFee', { memberId: item.id, name: item.name, amount: item.amount });
+                  navigation.navigate('CollectFee', { memberId: itemId, name: item.name, amount: dueVal });
                 }
               }}
             >
@@ -145,12 +148,12 @@ export default function DuesListScreen({ navigation, route }: any) {
                 </View>
                 <View>
                   <Text style={styles.studentName}>{item.name}</Text>
-                  <Text style={styles.feeType}>{item.type}</Text>
+                  <Text style={styles.feeType}>{item.type || 'Room Rent'}</Text>
                 </View>
               </View>
 
               <View style={styles.studentRight}>
-                <Text style={styles.amountText}>₹{item.amount}</Text>
+                <Text style={styles.amountText}>₹{formattedAmount}</Text>
                 {isPaid ? (
                   <View style={[styles.statusBadge, { backgroundColor: colors.successBg }]}>
                     <CheckCircle2 color={colors.success} size={14} strokeWidth={2.5} />

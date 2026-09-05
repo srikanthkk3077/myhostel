@@ -193,10 +193,10 @@ export default function RoomsListScreen({ navigation }: any) {
     return acc;
   }, {});
 
-  const renderGridRoomCard = (room: any) => {
+  const renderGridRoomCard = (room: any, index: number) => {
     return (
       <TouchableOpacity
-        key={room.id}
+        key={room._id ? String(room._id) : `grid-room-${room.id}-${index}`}
         style={styles.gridRoomCard}
         activeOpacity={0.8}
         onPress={() => navigation.navigate('RoomDetails', { room })}>
@@ -234,7 +234,7 @@ export default function RoomsListScreen({ navigation }: any) {
 
     return (
       <TouchableOpacity
-        key={room.id}
+        key={room._id ? String(room._id) : `room-${room.id}-${index}`}
         style={styles.roomCard}
         activeOpacity={0.85}
         onPress={() => navigation.navigate('RoomDetails', { room })}>
@@ -290,13 +290,13 @@ export default function RoomsListScreen({ navigation }: any) {
                     style={[
                       styles.bedSlot,
                       {
-                        backgroundColor: occupied ? colors.primary : colors.background,
-                        borderColor: occupied ? colors.primary : colors.border,
+                        backgroundColor: occupied ? colors.danger : colors.successBg,
+                        borderColor: occupied ? colors.danger : colors.success,
                         flex: 1, // Stretch evenly
                       }
                     ]}>
                     <BedDouble
-                      color={occupied ? '#FFFFFF' : colors.textTertiary}
+                      color={occupied ? '#FFFFFF' : colors.success}
                       size={14}
                       strokeWidth={2.5}
                     />
@@ -315,14 +315,14 @@ export default function RoomsListScreen({ navigation }: any) {
                     style={[
                       styles.bedSlot,
                       {
-                        backgroundColor: occupied ? colors.primary : colors.background,
-                        borderColor: occupied ? colors.primary : colors.border,
+                        backgroundColor: occupied ? colors.danger : colors.successBg,
+                        borderColor: occupied ? colors.danger : colors.success,
                         width: 48, // Fixed width
                         flex: 0,
                       }
                     ]}>
                     <BedDouble
-                      color={occupied ? '#FFFFFF' : colors.textTertiary}
+                      color={occupied ? '#FFFFFF' : colors.success}
                       size={14}
                       strokeWidth={2.5}
                     />
@@ -515,7 +515,7 @@ export default function RoomsListScreen({ navigation }: any) {
               <View key={`floor-${floor}`}>
                 <Text style={styles.floorHeader}>Floor {floor}</Text>
                 <View style={styles.gridContainer}>
-                  {groupedRoomsByFloor[floor].map((room: any) => renderGridRoomCard(room))}
+                  {groupedRoomsByFloor[floor].map((room: any, idx: number) => renderGridRoomCard(room, idx))}
                 </View>
               </View>
             ))

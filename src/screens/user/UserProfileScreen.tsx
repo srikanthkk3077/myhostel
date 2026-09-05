@@ -196,7 +196,7 @@ export default function UserProfileScreen({ navigation }: any) {
               <View style={[styles.menuIconBox, { backgroundColor: '#EFF6FF' }]}>
                 <Shield color="#2563EB" size={22} strokeWidth={2.5} />
               </View>
-              <Text style={styles.menuLabel}>Security & Password</Text>
+              <Text style={styles.menuLabel}>Privacy & Security</Text>
               <ChevronRight color={colors.border} size={24} />
             </TouchableOpacity>
             

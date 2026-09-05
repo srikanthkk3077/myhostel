@@ -28,6 +28,8 @@ import {
   Home,
   Sparkles,
   Save,
+  Plus,
+  Minus,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,8 +41,9 @@ const { width, height } = Dimensions.get('window');
 export default function AddRoomScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [roomNumber, setRoomNumber] = useState('');
-  const [roomType, setRoomType] = useState<'single' | 'double' | 'triple' | 'quad'>('double');
-  const [beds, setBeds] = useState('');
+  const [capacity, setCapacity] = useState<number>(2);
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
+  const [customInput, setCustomInput] = useState<string>('');
   const [floor, setFloor] = useState('');
   const [price, setPrice] = useState('');
   const [isAC, setIsAC] = useState(true);
@@ -69,21 +72,54 @@ export default function AddRoomScreen({ navigation }: any) {
     outputRange: [0, -20],
   });
 
-  const roomTypes = [
-    { id: 'single', label: 'Single', desc: '1 Person', icon: '1' },
-    { id: 'double', label: 'Double', desc: '2 Persons', icon: '2' },
-    { id: 'triple', label: 'Triple', desc: '3 Persons', icon: '3' },
-    { id: 'quad', label: 'Quad', desc: '4 Persons', icon: '4' },
+  const presets = [
+    { count: 1, label: 'Single' },
+    { count: 2, label: 'Double' },
+    { count: 3, label: 'Triple' },
+    { count: 4, label: 'Quad' },
   ];
 
-  const getBedCount = () => {
-    const map: any = { single: 1, double: 2, triple: 3, quad: 4 };
-    return map[roomType] || 2;
+  const handleSelectPreset = (count: number) => {
+    setCapacity(count);
+    setIsCustomMode(false);
+    setCustomInput('');
+  };
+
+  const handleStepperChange = (delta: number) => {
+    const nextVal = Math.max(1, capacity + delta);
+    setCapacity(nextVal);
+    if (!presets.some(p => p.count === nextVal)) {
+      setIsCustomMode(true);
+      setCustomInput(String(nextVal));
+    } else {
+      setIsCustomMode(false);
+      setCustomInput('');
+    }
+  };
+
+  const handleCustomInputChange = (text: string) => {
+    setCustomInput(text);
+    const parsed = parseInt(text, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      setCapacity(parsed);
+      setIsCustomMode(true);
+    }
+  };
+
+  const getRoomTypeLabel = () => {
+    const preset = presets.find(p => p.count === capacity);
+    if (preset) return preset.label;
+    return `${capacity}-Sharing`;
   };
 
   const handleSave = async () => {
     if (!roomNumber || !floor || !price) {
       Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    if (capacity <= 0) {
+      Alert.alert('Error', 'Please enter a valid room capacity');
       return;
     }
 
@@ -93,8 +129,8 @@ export default function AddRoomScreen({ navigation }: any) {
         roomNumber,
         floor: parseInt(floor, 10) || floor,
         pricePerMonth: parseInt(price, 10) || 0,
-        roomType: isAC ? `${roomType} (AC)` : `${roomType} (Non-AC)`,
-        roomCapacity: getBedCount(),
+        roomType: isAC ? `${getRoomTypeLabel()} (AC)` : `${getRoomTypeLabel()} (Non-AC)`,
+        roomCapacity: capacity,
       };
       
       const response = await createRoom(payload as any);
@@ -259,42 +295,37 @@ export default function AddRoomScreen({ navigation }: any) {
                 </View>
               </View>
 
-              {/* Room Capacity Selector */}
+              {/* Room Capacity Section */}
               <View style={styles.fieldWrapper}>
-                <Text style={styles.label}>Room Capacity</Text>
-                <View style={styles.capacityGrid}>
-                  {roomTypes.map((type) => {
-                    const active = roomType === type.id;
-                    return (
-                      <TouchableOpacity
-                        key={type.id}
-                        style={[
-                          styles.capacityOption,
-                          active && styles.capacityOptionActive,
-                        ]}
-                        onPress={() => setRoomType(type.id as any)}
-                        activeOpacity={0.8}>
-                        <Text style={[
-                          styles.capacityIcon,
-                          active && styles.capacityIconActive,
-                        ]}>
-                          {type.icon}
-                        </Text>
-                        <Text style={[
-                          styles.capacityLabel,
-                          active && styles.capacityLabelActive,
-                        ]}>
-                          {type.label}
-                        </Text>
-                        <Text style={[
-                          styles.capacityDesc,
-                          active && styles.capacityDescActive,
-                        ]}>
-                          {type.desc}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                <View style={styles.capacityHeaderRow}>
+                  <Text style={styles.label}>Room Capacity</Text>
+                  <View style={styles.badgeTag}>
+                    <Text style={styles.badgeTagText}>{capacity} Bed{capacity > 1 ? 's' : ''}</Text>
+                  </View>
+                </View>
+
+                {/* Interactive Stepper Box */}
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleStepperChange(-1)}
+                    activeOpacity={0.7}
+                  >
+                    <Minus color={colors.primary} size={20} strokeWidth={2.5} />
+                  </TouchableOpacity>
+
+                  <View style={styles.stepperCenter}>
+                    <Text style={styles.stepperCountText}>{capacity}</Text>
+                    <Text style={styles.stepperSubText}>{getRoomTypeLabel()} Room</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleStepperChange(1)}
+                    activeOpacity={0.7}
+                  >
+                    <Plus color={colors.primary} size={20} strokeWidth={2.5} />
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -318,7 +349,7 @@ export default function AddRoomScreen({ navigation }: any) {
                     Room {roomNumber || 'XXX'} {floor && `· Floor ${floor}`}
                   </Text>
                   <Text style={styles.previewSubtitle}>
-                    {isAC ? 'AC ' : 'Non-AC '}{roomTypes.find(t => t.id === roomType)?.label} · ₹{price || '0'}/mo
+                    {isAC ? 'AC ' : 'Non-AC '}{getRoomTypeLabel()} ({capacity} Bed{capacity > 1 ? 's' : ''}) · ₹{price || '0'}/mo
                   </Text>
                 </View>
               </View>
@@ -550,50 +581,132 @@ const styles = StyleSheet.create({
   acOptionTextActive: {
     color: '#FFFFFF',
   },
-  capacityGrid: {
+  capacityHeaderRow: {
     flexDirection: 'row',
-    gap: spacing.s,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
   },
-  capacityOption: {
-    flex: 1,
+  badgeTag: {
+    backgroundColor: colors.primaryBg,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  badgeTagText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.s,
+    borderWidth: 2,
+    borderColor: colors.primary + '30',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    marginVertical: spacing.xs,
+  },
+  stepperBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: colors.primaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperCenter: {
+    alignItems: 'center',
+  },
+  stepperCountText: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.primary,
+  },
+  stepperSubText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  subLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  presetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  presetCard: {
+    width: (width - spacing.m * 2 - 8 * 3 - 32) / 4,
     backgroundColor: colors.background,
-    paddingVertical: 14,
+    paddingVertical: 10,
     paddingHorizontal: 4,
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  capacityOptionActive: {
-    backgroundColor: colors.primaryBg,
+  presetCardActive: {
+    backgroundColor: colors.primary,
     borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  capacityIcon: {
-    fontSize: 22,
+  presetCount: {
+    fontSize: 16,
     fontWeight: '800',
-    color: colors.primary,
-    marginBottom: 2,
-  },
-  capacityIconActive: {
-    color: colors.primary,
-  },
-  capacityLabel: {
-    fontSize: 12,
-    fontWeight: '700',
     color: colors.text,
     marginBottom: 2,
   },
-  capacityLabelActive: {
-    color: colors.primary,
+  presetCountActive: {
+    color: '#FFFFFF',
   },
-  capacityDesc: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  capacityDescActive: {
-    color: colors.primary,
+  presetLabel: {
+    fontSize: 11,
     fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  presetLabelActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  customToggleBtn: {
+    backgroundColor: colors.background,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.m,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: spacing.s,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  customToggleBtnActive: {
+    backgroundColor: colors.primaryBg,
+    borderColor: colors.primary,
+  },
+  customToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  customToggleTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   previewCard: {
     backgroundColor: colors.surface,

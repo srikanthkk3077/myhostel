@@ -9,6 +9,9 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -21,10 +24,16 @@ import {
   ChevronRight,
   Building,
   CreditCard,
+  Lock,
+  Eye,
+  EyeOff,
+  X,
+  KeyRound,
+  FileText,
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMe } from '../../../service/merchant';
+import { getMe, changePassword } from '../../../service/merchant';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -32,6 +41,16 @@ export default function ProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Change Password Modal State
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -52,27 +71,70 @@ export default function ProfileScreen({ navigation }: any) {
     }, [])
   );
 
+  const handlePasswordChange = async () => {
+    if (!currentPassword.trim()) {
+      return Alert.alert('Validation Error', 'Please enter your current password.');
+    }
+    if (!newPassword.trim()) {
+      return Alert.alert('Validation Error', 'Please enter your new password.');
+    }
+    if (newPassword.length < 6) {
+      return Alert.alert('Validation Error', 'New password must be at least 6 characters long.');
+    }
+    if (newPassword !== confirmPassword) {
+      return Alert.alert('Validation Error', 'New password and confirm password do not match.');
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const response = await changePassword({ currentPassword, newPassword });
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert('Success', 'Password changed successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              setPasswordModalVisible(false);
+              setCurrentPassword('');
+              setNewPassword('');
+              setConfirmPassword('');
+            },
+          },
+        ]);
+      } else {
+        Alert.alert('Error', response.data?.message || 'Failed to change password.');
+      }
+    } catch (error: any) {
+      console.error('Failed to change password', error);
+      Alert.alert(
+        'Error',
+        error.response?.data?.message || 'Something went wrong while changing password.'
+      );
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
   const menuSections = [
     {
       title: 'Account Settings',
       items: [
-        { id: 'edit_profile', icon: User, title: 'Edit Profile', color: colors.primary },
-        { id: 'notifications', icon: Bell, title: 'Notifications', color: colors.warning },
-        { id: 'privacy', icon: Shield, title: 'Privacy & Security', color: colors.success },
+        { id: 'edit_profile', icon: User, title: 'Edit Profile', color: colors.primary, screen: 'EditProfile' },
+        { id: 'change_password', icon: Lock, title: 'Change Password', color: colors.primary },
+        { id: 'privacy', icon: Shield, title: 'Privacy & Security', color: colors.success, screen: 'Security' },
+        { id: 'Polices', icon: FileText, title: 'Policies', color: colors.success, screen: 'Policies' },
       ],
     },
     {
       title: 'Hostel Management',
       items: [
         { id: 'subscription', icon: CreditCard, title: 'My Subscription', color: colors.primary, screen: 'SubscriptionUpgrade' },
-        { id: 'hostel_details', icon: Building, title: 'Hostel Details', color: colors.info, screen: 'Dashboard' },
-        { id: 'preferences', icon: Settings, title: 'App Preferences', color: '#8B5CF6', screen: 'Dashboard' },
+        { id: 'preferences', icon: Settings, title: 'Languages', color: '#8B5CF6', screen: 'Dashboard' },
       ],
     },
     {
       title: 'Support',
       items: [
-        { id: 'help', icon: HelpCircle, title: 'Help & Support', color: colors.textSecondary },
+        { id: 'help', icon: HelpCircle, title: 'Help & Support', color: colors.textSecondary, screen: 'HelpSupport' },
       ],
     },
   ];
@@ -128,14 +190,14 @@ export default function ProfileScreen({ navigation }: any) {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           {loading ? (
-             <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: spacing.xl }} />
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: spacing.xl }} />
           ) : (
             <>
               <View style={styles.avatarContainer}>
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{getInitials(profile?.name || 'Admin')}</Text>
                 </View>
-                <TouchableOpacity style={styles.editAvatarBtn}>
+                <TouchableOpacity style={styles.editAvatarBtn} onPress={() => navigation.navigate('EditProfile')}>
                   <Settings color="#FFFFFF" size={12} strokeWidth={3} />
                 </TouchableOpacity>
               </View>
@@ -163,7 +225,13 @@ export default function ProfileScreen({ navigation }: any) {
                     itemIndex !== section.items.length - 1 && styles.menuItemBorder,
                   ]}
                   activeOpacity={0.7}
-                  onPress={() => (item as any).screen ? navigation.navigate((item as any).screen) : null}>
+                  onPress={() => {
+                    if (item.id === 'change_password') {
+                      setPasswordModalVisible(true);
+                    } else if ((item as any).screen) {
+                      navigation.navigate((item as any).screen);
+                    }
+                  }}>
                   <View style={styles.menuItemLeft}>
                     <View style={[styles.menuIconBox, { backgroundColor: item.color + '15' }]}>
                       <item.icon color={item.color} size={20} strokeWidth={2.5} />
@@ -186,6 +254,128 @@ export default function ProfileScreen({ navigation }: any) {
         <Text style={styles.versionText}>App Version 1.0.0</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Change Password Popup Modal */}
+      <Modal
+        visible={passwordModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPasswordModalVisible(false)}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setPasswordModalVisible(false)}
+          />
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={styles.modalHeaderIcon}>
+                  <KeyRound color={colors.primary} size={22} strokeWidth={2.5} />
+                </View>
+                <Text style={styles.modalTitle}>Change Password</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setPasswordModalVisible(false)}
+                style={styles.modalCloseBtn}>
+                <X color={colors.textSecondary} size={20} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalForm}>
+              <View style={styles.modalInputGroup}>
+                <Text style={styles.modalInputLabel}>Current Password</Text>
+                <View style={styles.modalPasswordWrapper}>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    secureTextEntry={!showCurrent}
+                    placeholder="Enter current password"
+                    placeholderTextColor={colors.textTertiary}
+                  />
+                  <TouchableOpacity
+                    style={styles.modalEyeBtn}
+                    onPress={() => setShowCurrent(!showCurrent)}>
+                    {showCurrent ? (
+                      <EyeOff color={colors.textSecondary} size={20} />
+                    ) : (
+                      <Eye color={colors.textSecondary} size={20} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.modalInputGroup}>
+                <Text style={styles.modalInputLabel}>New Password</Text>
+                <View style={styles.modalPasswordWrapper}>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry={!showNew}
+                    placeholder="Enter new password"
+                    placeholderTextColor={colors.textTertiary}
+                  />
+                  <TouchableOpacity
+                    style={styles.modalEyeBtn}
+                    onPress={() => setShowNew(!showNew)}>
+                    {showNew ? (
+                      <EyeOff color={colors.textSecondary} size={20} />
+                    ) : (
+                      <Eye color={colors.textSecondary} size={20} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.modalInputGroup}>
+                <Text style={styles.modalInputLabel}>Confirm New Password</Text>
+                <View style={styles.modalPasswordWrapper}>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showConfirm}
+                    placeholder="Re-enter new password"
+                    placeholderTextColor={colors.textTertiary}
+                  />
+                  <TouchableOpacity
+                    style={styles.modalEyeBtn}
+                    onPress={() => setShowConfirm(!showConfirm)}>
+                    {showConfirm ? (
+                      <EyeOff color={colors.textSecondary} size={20} />
+                    ) : (
+                      <Eye color={colors.textSecondary} size={20} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setPasswordModalVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSubmitBtn}
+                onPress={handlePasswordChange}
+                disabled={updatingPassword}>
+                {updatingPassword ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalSubmitText}>Update Password</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -356,5 +546,111 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textTertiary,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    paddingHorizontal: spacing.l,
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: spacing.xl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.l,
+  },
+  modalHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  modalCloseBtn: {
+    padding: 6,
+  },
+  modalForm: {
+    marginBottom: spacing.l,
+  },
+  modalInputGroup: {
+    marginBottom: spacing.m,
+  },
+  modalInputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  modalPasswordWrapper: {
+    position: 'relative',
+  },
+  modalInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 14,
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text,
+  },
+  modalEyeBtn: {
+    position: 'absolute',
+    right: spacing.m,
+    top: 14,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.m,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  modalSubmitBtn: {
+    flex: 1.5,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  modalSubmitText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

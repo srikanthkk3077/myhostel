@@ -11,8 +11,12 @@ import VisitorsListScreen from '../screens/merchant/hostelservices/VisitorsListS
 import AddVisitorScreen from '../screens/merchant/hostelservices/AddVisitorScreen';
 import AllServicesScreen from '../screens/merchant/hostelservices/AllServicesScreen';
 import ProfileScreen from '../screens/merchant/profile/ProfileScreen';
+import EditMerchantProfileScreen from '../screens/merchant/profile/EditMerchantProfileScreen';
 import NotificationsScreen from '../screens/merchant/dashboard/NotificationsScreen';
 import VisitorRequestsApprovalScreen from '../screens/merchant/hostelservices/VisitorRequestsApprovalScreen';
+import SecurityScreen from '../screens/user/SecurityScreen';
+import PoliciesScreen from '../screens/merchant/profile/PoliciesScreen';
+import MerchantHelpSupportScreen from '../screens/merchant/profile/MerchantHelpSupportScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -30,8 +34,12 @@ export default function DashboardStackNavigator() {
       <Stack.Screen name="AddVisitor" component={AddVisitorScreen} />
       <Stack.Screen name="AllServices" component={AllServicesScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="EditProfile" component={EditMerchantProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="VisitorRequestsApproval" component={VisitorRequestsApprovalScreen} />
+      <Stack.Screen name="Security" component={SecurityScreen} />
+      <Stack.Screen name="Policies" component={PoliciesScreen} />
+      <Stack.Screen name="HelpSupport" component={MerchantHelpSupportScreen} />
     </Stack.Navigator>
   );
 }

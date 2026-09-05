@@ -1,33 +1,36 @@
-import { ENDPOINTS } from "./endpoints"
-import server from "./index"
+import {
+  mockLoginUser,
+  mockRegisterUser,
+  mockForgotPassword,
+  mockResetPassword,
+} from './dummyData';
 
 export interface ILoginBody {
-    email?: string;
-    password?: string;
+  email?: string;
+  password?: string;
 }
+
 export interface IRegisterBody {
-    name?: string;
-    email?: string;
-    phone?: string;
-    password?: string;
-    accountType?: string;
-    hostelName?: string;
-    hostelAddress?: string;
-    addressProof?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  accountType?: string;
+  hostelName?: string;
+  hostelAddress?: string;
+  addressProof?: string;
 }
 
-export const loginUser = (data: ILoginBody) =>{
-    return server.post(ENDPOINTS.LOGIN, data)
-} 
+/** Login a user (merchant or student) */
+export const loginUser = (data: ILoginBody) =>
+  mockLoginUser(data as { email: string; password: string });
 
-export const registerUser = (data: IRegisterBody) =>{
-    return server.post(ENDPOINTS.REGISTER, data)
-}
+/** Register a new hostel owner / student account */
+export const registerUser = (data: IRegisterBody) => mockRegisterUser(data);
 
-export const forgotPassword = (data: { email: string }) => {
-    return server.post(ENDPOINTS.FORGOT_PASSWORD, data);
-};
+/** Send a forgot-password OTP to the given email */
+export const forgotPassword = (data: { email: string }) => mockForgotPassword(data);
 
-export const resetPassword = (data: { email: string; otp: string; newPassword?: string }) => {
-    return server.post(ENDPOINTS.RESET_PASSWORD, data);
-};
+/** Reset password using the OTP received via email */
+export const resetPassword = (data: { email: string; otp: string; newPassword?: string }) =>
+  mockResetPassword(data);

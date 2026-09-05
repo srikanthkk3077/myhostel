@@ -12,11 +12,13 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
-import { ArrowLeft, Check, Calendar, IndianRupee, CreditCard, Banknote, User, ChevronDown, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Check, Calendar as CalendarIcon, IndianRupee, CreditCard, Banknote, User, ChevronDown, ChevronLeft, ChevronRight, Search, X, Phone, MessageSquare } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMembers, collectFee } from '../../../service/merchant';
+import CustomCalendarModal from '../../../components/CustomCalendarModal';
 
 export default function CollectFeeScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
@@ -29,6 +31,7 @@ export default function CollectFeeScreen({ navigation, route }: any) {
   
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Cash' | 'Bank'>('UPI');
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [date, setDate] = useState(new Date().toLocaleDateString('en-GB'));
   const [remarks, setRemarks] = useState('');
 
@@ -96,6 +99,20 @@ export default function CollectFeeScreen({ navigation, route }: any) {
     }
   };
 
+  const handleCall = (phoneNumber?: string) => {
+    const num = phoneNumber || selectedMember?.phone || selectedMember?.mobile || '9123456789';
+    Linking.openURL(`tel:${num}`).catch(() => {
+      Alert.alert('Error', 'Unable to initiate phone call');
+    });
+  };
+
+  const handleMessage = (phoneNumber?: string) => {
+    const num = phoneNumber || selectedMember?.phone || selectedMember?.mobile || '9123456789';
+    Linking.openURL(`sms:${num}`).catch(() => {
+      Alert.alert('Error', 'Unable to open SMS messaging');
+    });
+  };
+
   const filteredMembers = membersList.filter(m => 
     m.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -142,6 +159,48 @@ export default function CollectFeeScreen({ navigation, route }: any) {
           <View style={styles.formCard}>
             <Text style={styles.sectionTitle}>Payment Details</Text>
             
+            {/* Top Selected Member Call & Message Contact Header */}
+            {selectedMember && (
+              <View style={styles.memberHeaderCard}>
+                <View style={styles.memberHeaderTop}>
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberAvatarText}>
+                      {selectedMember.name ? selectedMember.name.slice(0, 2).toUpperCase() : 'ME'}
+                    </Text>
+                  </View>
+                  <View style={styles.memberHeaderDetails}>
+                    <Text style={styles.memberHeaderName}>{selectedMember.name}</Text>
+                    <Text style={styles.memberHeaderSub}>
+                      {`Room ${selectedMember.room || selectedMember.roomNumber || '101'} • Rent: ₹${selectedMember.monthlyRent || amount}`}
+                    </Text>
+                    <Text style={styles.memberHeaderPhone}>
+                      {`📱 ${selectedMember.phone || selectedMember.mobile || '9123456789'}`}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.memberActionRow}>
+                  <TouchableOpacity 
+                    style={styles.callActionButton}
+                    activeOpacity={0.8}
+                    onPress={() => handleCall(selectedMember.phone || selectedMember.mobile)}
+                  >
+                    <Phone color="#FFFFFF" size={16} strokeWidth={2.5} />
+                    <Text style={styles.callActionButtonText}>Call Member</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.messageActionButton}
+                    activeOpacity={0.8}
+                    onPress={() => handleMessage(selectedMember.phone || selectedMember.mobile)}
+                  >
+                    <MessageSquare color={colors.primary} size={16} strokeWidth={2.5} />
+                    <Text style={styles.messageActionButtonText}>Message</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {/* Custom dropdown styled input for Member Name */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Member Name</Text>
@@ -163,7 +222,26 @@ export default function CollectFeeScreen({ navigation, route }: any) {
             </View>
 
             {renderInput('Amount (₹)', IndianRupee, 'e.g. 5000', amount, setAmount, { keyboardType: 'numeric' })}
-            {renderInput('Date', Calendar, 'DD/MM/YYYY', date, setDate, { editable: false })}
+            
+            {/* Interactive Date Field with Calendar Picker */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Date</Text>
+              <TouchableOpacity 
+                style={styles.inputWrapper} 
+                onPress={() => setShowCalendarModal(true)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.inputIcon}>
+                  <CalendarIcon color={colors.primary} size={20} />
+                </View>
+                <View style={{ flex: 1, paddingVertical: Platform.OS === 'ios' ? 14 : 10 }}>
+                  <Text style={styles.inputText}>
+                    {date}
+                  </Text>
+                </View>
+                <ChevronDown color={colors.textSecondary} size={20} />
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.inputLabel}>Payment Method</Text>
             <View style={styles.methodsRow}>
@@ -216,6 +294,17 @@ export default function CollectFeeScreen({ navigation, route }: any) {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Custom Calendar Component Modal */}
+      <CustomCalendarModal
+        visible={showCalendarModal}
+        onClose={() => setShowCalendarModal(false)}
+        selectedDate={date}
+        onSelectDate={(newDateStr) => {
+          setDate(newDateStr);
+        }}
+        title="Select Payment Date"
+      />
+
       {/* Member Selection Modal */}
       <Modal
         visible={showMemberModal}
@@ -247,25 +336,45 @@ export default function CollectFeeScreen({ navigation, route }: any) {
               data={filteredMembers}
               keyExtractor={(item) => item._id}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.memberItem}
-                  onPress={() => {
-                    setSelectedMember(item);
-                    setAmount(String(item.monthlyRent || ''));
-                    setShowMemberModal(false);
-                    setSearchQuery('');
-                  }}
-                >
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>{item.name}</Text>
-                    <Text style={styles.memberSub}>{`Room: ${item.room || 'Unassigned'} • Rent: ₹${item.monthlyRent || 0}`}</Text>
+              renderItem={({ item }) => {
+                const isSelected = selectedMember?._id === item._id;
+                return (
+                  <View style={styles.memberItem}>
+                    <TouchableOpacity
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        setSelectedMember(item);
+                        setAmount(String(item.monthlyRent || ''));
+                        setShowMemberModal(false);
+                        setSearchQuery('');
+                      }}
+                    >
+                      <View style={styles.memberInfo}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.memberName}>{item.name}</Text>
+                          {isSelected && <Check color={colors.primary} size={18} strokeWidth={3} />}
+                        </View>
+                        <Text style={styles.memberSub}>{`Room: ${item.room || 'Unassigned'} • Rent: ₹${item.monthlyRent || 0}`}</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <View style={styles.memberItemActions}>
+                      <TouchableOpacity 
+                        style={styles.iconCircleBtnCall} 
+                        onPress={() => handleCall(item.phone || item.mobile)}
+                      >
+                        <Phone color="#16A34A" size={16} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.iconCircleBtnMsg} 
+                        onPress={() => handleMessage(item.phone || item.mobile)}
+                      >
+                        <MessageSquare color={colors.primary} size={16} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  {selectedMember?._id === item._id && (
-                    <Check color={colors.primary} size={20} strokeWidth={3} />
-                  )}
-                </TouchableOpacity>
-              )}
+                );
+              }}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>No active members found</Text>
@@ -486,5 +595,115 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textTertiary,
     fontWeight: '500',
+  },
+  /* Member Contact Header Styles */
+  memberHeaderCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+    padding: spacing.m,
+    marginBottom: spacing.l,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  memberHeaderTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.m,
+    gap: spacing.m,
+  },
+  memberAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  memberAvatarText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  memberHeaderDetails: {
+    flex: 1,
+  },
+  memberHeaderName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  memberHeaderSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  memberHeaderPhone: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  memberActionRow: {
+    flexDirection: 'row',
+    gap: spacing.m,
+  },
+  callActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+    paddingVertical: 10,
+    borderRadius: 14,
+    gap: 6,
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  callActionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  messageActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryBg,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingVertical: 10,
+    borderRadius: 14,
+    gap: 6,
+  },
+  messageActionButtonText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  memberItemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconCircleBtnCall: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconCircleBtnMsg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

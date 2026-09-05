@@ -367,18 +367,18 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
                       style={[
                         styles.bedIcon,
                         {
-                          backgroundColor: isExtraBed ? '#FEF3C7' : (isOccupied ? colors.primaryBg : colors.successBg),
+                          backgroundColor: isExtraBed ? '#FEF3C7' : (isOccupied ? colors.dangerBg : colors.successBg),
                         },
                       ]}>
                       <BedDouble
-                        color={isExtraBed ? '#B45309' : (isOccupied ? colors.primary : colors.success)}
+                        color={isExtraBed ? '#B45309' : (isOccupied ? colors.danger : colors.success)}
                         size={22}
                         strokeWidth={2.5}
                       />
                     </View>
                     <View>
                       <Text style={styles.bedName}>Bed {bed.id}</Text>
-                      <Text style={[styles.bedType, isExtraBed && { color: '#B45309' }]}>
+                      <Text style={[styles.bedType, isExtraBed ? { color: '#B45309' } : (isOccupied ? { color: colors.danger, fontWeight: '700' } : { color: colors.success })]}>
                         {isExtraBed ? '⚠️ Must Transfer' : (isOccupied ? 'Occupied' : 'Available')}
                       </Text>
                     </View>
@@ -435,7 +435,7 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
           </View>
 
           {/* Quick Actions */}
-          <View style={styles.actionsCard}>
+          {/* <View style={styles.actionsCard}>
             <Text style={styles.actionsTitle}>Quick Actions</Text>
             <View style={styles.actionsRow}>
               <TouchableOpacity
@@ -466,7 +466,7 @@ export default function RoomDetailsScreen({ route, navigation }: any) {
                 <Text style={styles.actionLabel}>Contact{'\n'}Members</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </View> */}
 
           {/* Bottom space */}
           <View style={{ height: 40 }} />

@@ -174,7 +174,7 @@ export default function PendingFeesScreen({ navigation }: any) {
           {/* Quick Actions */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalActions}>
+            <View style={styles.quickActionsGrid}>
               
               <TouchableOpacity 
                 style={styles.actionCard} 
@@ -183,7 +183,7 @@ export default function PendingFeesScreen({ navigation }: any) {
                 <View style={[styles.actionIconCircle, { backgroundColor: colors.primaryBg }]}>
                   <Plus color={colors.primary} size={22} strokeWidth={2.5} />
                 </View>
-                <Text style={styles.actionCardText}>Collect</Text>
+                <Text style={styles.actionCardText} numberOfLines={1}>Collect Fee</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -193,7 +193,7 @@ export default function PendingFeesScreen({ navigation }: any) {
                 <View style={[styles.actionIconCircle, { backgroundColor: colors.successBg }]}>
                   <History color={colors.success} size={22} strokeWidth={2.5} />
                 </View>
-                <Text style={styles.actionCardText}>History</Text>
+                <Text style={styles.actionCardText} numberOfLines={1}>History</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -203,10 +203,10 @@ export default function PendingFeesScreen({ navigation }: any) {
                 <View style={[styles.actionIconCircle, { backgroundColor: colors.warningBg }]}>
                   <PieChart color={colors.warning} size={22} strokeWidth={2.5} />
                 </View>
-                <Text style={styles.actionCardText}>Expenses</Text>
+                <Text style={styles.actionCardText} numberOfLines={1}>Expenses</Text>
               </TouchableOpacity>
 
-            </ScrollView>
+            </View>
           </View>
 
           {/* Pending Members List */}
@@ -222,18 +222,21 @@ export default function PendingFeesScreen({ navigation }: any) {
             </View>
 
             <View style={styles.listContainer}>
-              {pendingStudents.slice(0, 3).map((student) => {
+              {pendingStudents.slice(0, 3).map((student, idx) => {
                 const isPaid = student.status === 'Paid';
+                const dueVal = student.dueAmount ?? student.amount ?? 4500;
+                const formattedAmount = typeof dueVal === 'number' ? dueVal.toLocaleString('en-IN') : dueVal;
+                const studentId = student.id || student._id || `due-${idx}`;
                 return (
                   <TouchableOpacity 
-                    key={student.id} 
+                    key={studentId} 
                     style={styles.studentCard}
                     activeOpacity={0.7}
                     onPress={() => {
                       if (isPaid && student.transactionId) {
                         navigation.navigate('TransactionDetails', { id: student.transactionId });
                       } else if (!isPaid) {
-                        navigation.navigate('CollectFee', { memberId: student.id, name: student.name, amount: student.amount });
+                        navigation.navigate('CollectFee', { memberId: studentId, name: student.name, amount: dueVal });
                       }
                     }}
                   >
@@ -246,12 +249,12 @@ export default function PendingFeesScreen({ navigation }: any) {
                       </View>
                       <View>
                         <Text style={styles.studentName}>{student.name}</Text>
-                        <Text style={styles.feeType}>{student.type}</Text>
+                        <Text style={styles.feeType}>{student.type || 'Room Rent'}</Text>
                       </View>
                     </View>
 
                     <View style={styles.studentRight}>
-                      <Text style={styles.amountText}>₹{student.amount}</Text>
+                      <Text style={styles.amountText}>₹{formattedAmount}</Text>
                       {isPaid ? (
                         <View style={[styles.statusBadge, { backgroundColor: colors.successBg }]}>
                           <CheckCircle2 color={colors.success} size={14} strokeWidth={2.5} />
@@ -464,16 +467,17 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
   },
-  horizontalActions: {
+  quickActionsGrid: {
+    flexDirection: 'row',
     gap: spacing.m,
-    paddingRight: spacing.l,
   },
   actionCard: {
+    flex: 1,
     backgroundColor: colors.surface,
-    padding: spacing.m,
+    paddingVertical: spacing.m,
+    paddingHorizontal: 4,
     borderRadius: 20,
     alignItems: 'center',
-    width: 100,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,

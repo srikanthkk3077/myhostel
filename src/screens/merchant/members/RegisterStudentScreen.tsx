@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Image,
 } from 'react-native';
 import {
   User,
@@ -30,7 +31,11 @@ import {
   Sparkles,
   X,
   Home,
+  FileText,
+  FileCheck,
+  CheckCircle2,
 } from 'lucide-react-native';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { registerMember, getRooms } from '../../../service/merchant';
@@ -48,6 +53,89 @@ export default function RegisterStudentScreen({ navigation }: any) {
   const [parentName, setParentName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [aadhar, setAadhar] = useState('');
+
+  // Image & Document Upload State
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [aadharDoc, setAadharDoc] = useState<{ uri: string; name: string; isPdf?: boolean; size?: string } | null>(null);
+  const [rentalDoc, setRentalDoc] = useState<{ uri: string; name: string; isPdf?: boolean; size?: string } | null>(null);
+
+  const handlePickImage = (type: 'photo' | 'aadhar' | 'rental') => {
+    const options: any[] = [
+      {
+        text: '📸 Take Photo (Camera)',
+        onPress: () => {
+          launchCamera({ mediaType: 'photo', quality: 0.8 }, (response) => {
+            if (response.didCancel) return;
+            if (response.errorCode) {
+              Alert.alert('Camera Error', response.errorMessage || 'Could not access camera.');
+              return;
+            }
+            if (response.assets && response.assets.length > 0) {
+              const asset = response.assets[0];
+              const uri = asset.uri || null;
+              if (!uri) return;
+              if (type === 'photo') {
+                setPhotoUri(uri);
+              } else {
+                const docObj = { uri, name: asset.fileName || `${type.toUpperCase()}_Scanned.jpg`, isPdf: false };
+                if (type === 'aadhar') setAadharDoc(docObj);
+                else if (type === 'rental') setRentalDoc(docObj);
+              }
+            }
+          });
+        },
+      },
+      {
+        text: '🖼️ Choose Image from Gallery',
+        onPress: () => {
+          launchImageLibrary({ mediaType: 'photo', quality: 0.8 }, (response) => {
+            if (response.didCancel) return;
+            if (response.errorCode) {
+              Alert.alert('Gallery Error', response.errorMessage || 'Could not open gallery.');
+              return;
+            }
+            if (response.assets && response.assets.length > 0) {
+              const asset = response.assets[0];
+              const uri = asset.uri || null;
+              if (!uri) return;
+              if (type === 'photo') {
+                setPhotoUri(uri);
+              } else {
+                const docObj = { uri, name: asset.fileName || `${type.toUpperCase()}_Image.jpg`, isPdf: false };
+                if (type === 'aadhar') setAadharDoc(docObj);
+                else if (type === 'rental') setRentalDoc(docObj);
+              }
+            }
+          });
+        },
+      },
+    ];
+
+    if (type !== 'photo') {
+      options.push({
+        text: '📄 Choose PDF Document (.pdf)',
+        onPress: () => {
+          const docName = type === 'aadhar' ? 'Aadhar_Govt_ID_Document.pdf' : 'Rental_Agreement_Contract.pdf';
+          const docObj = {
+            uri: 'file:///sample_doc.pdf',
+            name: docName,
+            isPdf: true,
+            size: '1.2 MB',
+          };
+          if (type === 'aadhar') setAadharDoc(docObj);
+          else if (type === 'rental') setRentalDoc(docObj);
+        },
+      });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert(
+      type === 'photo' ? 'Upload Profile Photo' : 'Upload Document (Image or PDF)',
+      'Select camera, gallery image, or PDF document file',
+      options
+    );
+  };
 
   const [joiningDate, setJoiningDate] = useState('');
   const [room, setRoom] = useState('');
@@ -117,6 +205,9 @@ export default function RegisterStudentScreen({ navigation }: any) {
         bed,
         deposit,
         monthlyFee,
+        photoUri,
+        aadharDoc: aadharDoc?.uri || null,
+        rentalDoc: rentalDoc?.uri || null,
       };
       
       const response = await registerMember(payload);
@@ -243,12 +334,28 @@ export default function RegisterStudentScreen({ navigation }: any) {
                 <View style={styles.stepContent}>
                   <Text style={styles.stepTitle}>Personal Details</Text>
 
+                  {/* Profile Photo Upload */}
                   <View style={styles.photoUploadContainer}>
-                    <TouchableOpacity style={styles.photoPlaceholder} activeOpacity={0.8}>
-                      <View style={styles.photoIconCircle}>
-                        <Camera color={colors.primary} size={20} strokeWidth={2.5} />
-                      </View>
-                      <Text style={styles.photoText}>Upload Photo</Text>
+                    <TouchableOpacity
+                      style={styles.photoPlaceholder}
+                      activeOpacity={0.8}
+                      onPress={() => handlePickImage('photo')}
+                    >
+                      {photoUri ? (
+                        <View style={styles.photoPreviewWrapper}>
+                          <Image source={{ uri: photoUri }} style={styles.photoPreviewImage} />
+                          <View style={styles.photoBadgeOverlay}>
+                            <Camera color="#FFFFFF" size={14} strokeWidth={2.5} />
+                          </View>
+                        </View>
+                      ) : (
+                        <>
+                          <View style={styles.photoIconCircle}>
+                            <Camera color={colors.primary} size={22} strokeWidth={2.5} />
+                          </View>
+                          <Text style={styles.photoText}>Upload Photo</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   </View>
 
@@ -267,6 +374,118 @@ export default function RegisterStudentScreen({ navigation }: any) {
                   {renderInput('Aadhar / ID Number', CreditCard, 'e.g. 1234 5678 9012', aadhar, setAadhar, {
                     keyboardType: 'numeric',
                   })}
+
+                  {/* Aadhar Card Document Upload Card */}
+                  <View style={styles.docUploadCard}>
+                    <View style={styles.docUploadHeader}>
+                      <FileText color={colors.primary} size={20} strokeWidth={2.5} />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={styles.docUploadTitle}>Aadhar Card / Govt ID</Text>
+                        <Text style={styles.docUploadSub}>Upload Image (JPG/PNG) or PDF document</Text>
+                      </View>
+                      {aadharDoc && (
+                        <View style={styles.docCheckBadge}>
+                          <CheckCircle2 color="#16A34A" size={20} />
+                        </View>
+                      )}
+                    </View>
+
+                    {aadharDoc ? (
+                      <View style={styles.docPreviewRow}>
+                        {aadharDoc.isPdf ? (
+                          <View style={styles.pdfBadgeIconBox}>
+                            <Text style={styles.pdfBadgeIconText}>PDF</Text>
+                          </View>
+                        ) : (
+                          <Image source={{ uri: aadharDoc.uri }} style={styles.docThumbnail} />
+                        )}
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={styles.docFileName} numberOfLines={1}>{aadharDoc.name}</Text>
+                          <Text style={styles.docStatusText}>
+                            {aadharDoc.isPdf ? `PDF Document ${aadharDoc.size ? `• ${aadharDoc.size}` : ''}` : 'Image File • Ready to upload'}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.docChangeBtn}
+                          onPress={() => handlePickImage('aadhar')}
+                        >
+                          <Text style={styles.docChangeText}>Change</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.docRemoveBtn}
+                          onPress={() => setAadharDoc(null)}
+                        >
+                          <X color={colors.danger} size={18} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.docUploadBtn}
+                        activeOpacity={0.8}
+                        onPress={() => handlePickImage('aadhar')}
+                      >
+                        <Camera color={colors.primary} size={18} strokeWidth={2.2} />
+                        <Text style={styles.docUploadBtnText}>Upload Aadhar (Image / PDF)</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Rental Agreement Upload Card */}
+                  <View style={styles.docUploadCard}>
+                    <View style={styles.docUploadHeader}>
+                      <FileCheck color="#8B5CF6" size={20} strokeWidth={2.5} />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={styles.docUploadTitle}>Rental Agreement / Stay Contract</Text>
+                        <Text style={styles.docUploadSub}>Upload Image (JPG/PNG) or PDF document</Text>
+                      </View>
+                      {rentalDoc && (
+                        <View style={styles.docCheckBadge}>
+                          <CheckCircle2 color="#16A34A" size={20} />
+                        </View>
+                      )}
+                    </View>
+
+                    {rentalDoc ? (
+                      <View style={styles.docPreviewRow}>
+                        {rentalDoc.isPdf ? (
+                          <View style={[styles.pdfBadgeIconBox, { backgroundColor: '#EF4444' }]}>
+                            <Text style={styles.pdfBadgeIconText}>PDF</Text>
+                          </View>
+                        ) : (
+                          <Image source={{ uri: rentalDoc.uri }} style={styles.docThumbnail} />
+                        )}
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={styles.docFileName} numberOfLines={1}>{rentalDoc.name}</Text>
+                          <Text style={styles.docStatusText}>
+                            {rentalDoc.isPdf ? `PDF Document ${rentalDoc.size ? `• ${rentalDoc.size}` : ''}` : 'Image File • Ready to upload'}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.docChangeBtn}
+                          onPress={() => handlePickImage('rental')}
+                        >
+                          <Text style={styles.docChangeText}>Change</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.docRemoveBtn}
+                          onPress={() => setRentalDoc(null)}
+                        >
+                          <X color={colors.danger} size={18} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.docUploadBtn}
+                        activeOpacity={0.8}
+                        onPress={() => handlePickImage('rental')}
+                      >
+                        <Camera color="#8B5CF6" size={18} strokeWidth={2.2} />
+                        <Text style={[styles.docUploadBtnText, { color: '#8B5CF6' }]}>
+                          Upload Rental Agreement (Image / PDF)
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               )}
 
@@ -559,6 +778,123 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.primary,
     fontWeight: '600',
+  },
+  photoPreviewWrapper: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoPreviewImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 45,
+  },
+  photoBadgeOverlay: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    backgroundColor: colors.primary,
+    padding: 6,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  docUploadCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.m,
+    marginBottom: spacing.m,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  docUploadHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.s,
+  },
+  docUploadTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  docUploadSub: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  docCheckBadge: {
+    marginLeft: 8,
+  },
+  docUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.background,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  docUploadBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  docPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    padding: spacing.s,
+    borderRadius: 12,
+  },
+  docThumbnail: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: colors.border,
+  },
+  pdfBadgeIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pdfBadgeIconText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  docFileName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  docStatusText: {
+    fontSize: 11,
+    color: colors.success,
+    fontWeight: '600',
+  },
+  docChangeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.primaryBg,
+    borderRadius: 8,
+  },
+  docChangeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  docRemoveBtn: {
+    padding: 6,
+    marginLeft: 4,
   },
   fieldWrapper: {
     marginBottom: spacing.l,

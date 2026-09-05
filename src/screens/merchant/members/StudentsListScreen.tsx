@@ -420,7 +420,7 @@ export default function StudentsListScreen({ navigation }: any) {
                     <Text style={styles.roomHeaderText}>{room === 'Unassigned' ? room : `Room ${room}`}</Text>
                     <View style={styles.roomHeaderLine} />
                   </View>
-                  {groupedStudents[room].map((student, idx) => renderStudentCard(student, idx))}
+                  {groupedStudents[room].map((student: any, idx: number) => renderStudentCard(student, idx))}
                 </View>
               ))
           }
