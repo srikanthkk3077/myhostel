@@ -1,9 +1,5 @@
-import {
-  mockLoginUser,
-  mockRegisterUser,
-  mockForgotPassword,
-  mockResetPassword,
-} from './dummyData';
+import { ENDPOINTS } from './endpoints';
+import server from './index';
 
 export interface ILoginBody {
   email?: string;
@@ -22,15 +18,21 @@ export interface IRegisterBody {
 }
 
 /** Login a user (merchant or student) */
-export const loginUser = (data: ILoginBody) =>
-  mockLoginUser(data as { email: string; password: string });
+export const loginUser = (data: ILoginBody) => {
+  return server.post(ENDPOINTS.LOGIN, data);
+};
 
 /** Register a new hostel owner / student account */
-export const registerUser = (data: IRegisterBody) => mockRegisterUser(data);
+export const registerUser = (data: IRegisterBody) => {
+  return server.post(ENDPOINTS.REGISTER, data);
+};
 
 /** Send a forgot-password OTP to the given email */
-export const forgotPassword = (data: { email: string }) => mockForgotPassword(data);
+export const forgotPassword = (data: { email: string }) => {
+  return server.post(ENDPOINTS.FORGOT_PASSWORD, data);
+};
 
 /** Reset password using the OTP received via email */
-export const resetPassword = (data: { email: string; otp: string; newPassword?: string }) =>
-  mockResetPassword(data);
+export const resetPassword = (data: { email: string; otp: string; newPassword?: string }) => {
+  return server.post(ENDPOINTS.RESET_PASSWORD, data);
+};

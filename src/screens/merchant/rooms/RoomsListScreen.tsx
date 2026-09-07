@@ -184,7 +184,7 @@ export default function RoomsListScreen({ navigation }: any) {
 
   const totalCapacity = rooms.reduce((acc, r) => acc + r.capacity, 0);
   const totalOccupied = rooms.reduce((acc, r) => acc + r.occupants, 0);
-  const occupancyRate = Math.round((totalOccupied / totalCapacity) * 100);
+  const occupancyRate = totalCapacity > 0 ? Math.round((totalOccupied / totalCapacity) * 100) : 0;
 
   const groupedRoomsByFloor = filteredRooms.reduce((acc: any, room: any) => {
     const floor = room.floor;
@@ -508,7 +508,19 @@ export default function RoomsListScreen({ navigation }: any) {
           </View>
 
           {/* Rooms List */}
-          {viewMode === 'list' ? (
+          {filteredRooms.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <View style={styles.emptyIconCircle}>
+                <Home color={colors.textTertiary} size={36} strokeWidth={1.5} />
+              </View>
+              <Text style={styles.emptyTitle}>No Rooms Found</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery || filterType !== 'all'
+                  ? "No rooms match your active search or filter criteria."
+                  : "You haven't added any rooms yet. Tap '+' below to create your first room!"}
+              </Text>
+            </View>
+          ) : viewMode === 'list' ? (
             filteredRooms.map((room, idx) => renderRoomCard(room, idx))
           ) : (
             Object.keys(groupedRoomsByFloor).sort().map(floor => (
@@ -1175,5 +1187,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl * 1.5,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.m,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 280,
   },
 });

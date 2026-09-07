@@ -11,6 +11,8 @@ import {
   Dimensions,
   ActivityIndicator,
   Alert,
+  Linking,
+  Image,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -32,7 +34,7 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMemberById, deleteMember, transferMember, getRooms } from '../../../service/merchant';
+import { getMemberById, deleteMember, transferMember, getRooms, getMemberTransactions } from '../../../service/merchant';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function StudentDetailsScreen({ navigation, route }: any) {
@@ -50,25 +52,120 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
 
   const [member, setMember] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [recentTransaction, setRecentTransaction] = useState<any>(null);
 
   const fetchMember = async () => {
     try {
       if (!targetId) return;
+      let currentMemberRoom = '';
       const response = await getMemberById(targetId);
       if (response.status === 200 && response.data?.success) {
         const m = response.data.data;
+        currentMemberRoom = m.room || '';
+
+        // Determine correct current balance for mid-join members:
+        // - If isMidJoin is true AND the joining month == current month → use midJoinAmount
+        // - Otherwise → use standard monthlyRent
+        const fullRent = m.monthlyRent ?? m.monthlyFee ?? m.rent ?? 0;
+        const isMidJoin = m.isMidJoin ?? false;
+        const midJoinAmt = m.midJoinAmount ?? 0;
+        let computedBalance = m.computedBalance !== undefined
+          ? m.computedBalance
+          : (m.hasPaidCurrentMonth ? 0 : fullRent);
+
+        if (m.computedBalance === undefined && !m.hasPaidCurrentMonth) {
+          if (isMidJoin && midJoinAmt > 0) {
+            const joiningStr = m.joiningDate || m.joinDate || '';
+            if (joiningStr) {
+              // Parse joining date (supports DD/MM/YYYY, YYYY-MM-DD, ISO)
+              let joinDateObj: Date | null = null;
+              if (/^\d{2}\/\d{2}\/\d{4}$/.test(joiningStr)) {
+                const [d, mo, y] = joiningStr.split('/');
+                joinDateObj = new Date(Number(y), Number(mo) - 1, Number(d));
+              } else {
+                joinDateObj = new Date(joiningStr);
+              }
+              if (joinDateObj && !isNaN(joinDateObj.getTime())) {
+                const now = new Date();
+                const isJoiningMonth =
+                  joinDateObj.getFullYear() === now.getFullYear() &&
+                  joinDateObj.getMonth() === now.getMonth();
+                computedBalance = isJoiningMonth ? midJoinAmt : fullRent;
+              }
+            }
+          }
+        }
+
+        let hasPaid = m.hasPaidCurrentMonth ?? (computedBalance === 0);
+
+        // Fetch latest transaction for this member
+        try {
+          const txnRes = await getMemberTransactions(m._id);
+          if (txnRes.status === 200 && txnRes.data?.success) {
+            const txnsData = txnRes.data.data;
+            const txns: any[] = Array.isArray(txnsData)
+              ? txnsData
+              : (txnsData?.transactions || []);
+
+            if (txns.length > 0) {
+              // Sort descending by date and take most recent
+              const sorted = [...txns].sort((a, b) => {
+                const dateA = new Date(a.date || a.createdAt || a.paymentDate).getTime();
+                const dateB = new Date(b.date || b.createdAt || b.paymentDate).getTime();
+                return dateB - dateA;
+              });
+              setRecentTransaction(sorted[0]);
+
+              // Check if current month fee is paid in transactions
+              const now = new Date();
+              const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+              const isCurrentMonthPaid = txns.some(t => {
+                const statusMatches = String(t.status).toLowerCase() === 'paid';
+                const monthMatches = t.paymentMonth === currentMonthStr;
+                return statusMatches && (monthMatches || t.type === 'credit');
+              });
+
+              if (isCurrentMonthPaid) {
+                hasPaid = true;
+                computedBalance = 0;
+              }
+            } else {
+              setRecentTransaction(null);
+            }
+          }
+        } catch (_txnErr) {
+          // Non-critical, silently ignore
+        }
+
+        if (hasPaid) {
+          computedBalance = 0;
+        }
+
         setMember({
           id: m._id,
+          _id: m._id,
           name: m.name,
-          status: m.status,
+          status: hasPaid ? 'Active' : (m.computedStatus || m.status || 'Active'),
+          hasPaidCurrentMonth: hasPaid,
           room: m.room,
-          bed: m.bed || 'A',
-          phone: m.mobile,
-          joinDate: m.joiningDate || '-',
-          balance: m.monthlyRent - (m.securityDeposit || 0),
-          aadhar: m.aadhar,
-          deposit: m.securityDeposit,
-          rent: m.monthlyRent
+          bed: m.bed || 'Bed 1',
+          phone: m.mobile || m.phone,
+          mobile: m.mobile || m.phone,
+          parentName: m.parentName || '',
+          parentPhone: m.parentPhone || '',
+          joinDate: m.joiningDate || m.joinDate || '-',
+          joiningDate: m.joiningDate || m.joinDate || '-',
+          balance: computedBalance,
+          aadhar: m.aadhar || '',
+          deposit: m.securityDeposit !== undefined ? m.securityDeposit : (m.deposit ?? 0),
+          securityDeposit: m.securityDeposit !== undefined ? m.securityDeposit : (m.deposit ?? 0),
+          rent: fullRent,
+          monthlyRent: fullRent,
+          isMidJoin,
+          midJoinAmount: midJoinAmt,
+          photoUri: m.photoUri || null,
+          aadharDoc: m.aadharDoc || null,
+          rentalDoc: m.rentalDoc || null,
         });
       }
 
@@ -76,12 +173,22 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
       const roomsRes = await getRooms();
       if (roomsRes.status === 200 && roomsRes.data?.success) {
         const roomsList = roomsRes.data.data;
-        const mappedRooms = roomsList.map((r: any) => ({
-          id: r.roomNumber,
-          type: r.roomType,
-          rent: r.pricePerMonth,
-          floor: r.floor
-        }));
+        const mappedRooms = roomsList.map((r: any) => {
+          const occ = r.occupants !== undefined ? r.occupants : (r.members ? r.members.length : 0);
+          const cap = r.roomCapacity || 1;
+          const isCurrent = r.roomNumber === currentMemberRoom;
+          const isFull = !isCurrent && occ >= cap;
+          return {
+            id: r.roomNumber,
+            type: r.roomType,
+            rent: r.pricePerMonth,
+            floor: r.floor,
+            capacity: cap,
+            occupants: occ,
+            isCurrent,
+            isFull,
+          };
+        });
         setAvailableRooms(mappedRooms);
       }
     } catch (error) {
@@ -150,31 +257,55 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
       .slice(0, 2);
 
   const currentRent = member?.rent || 0;
-  const daysInMonth = 30;
-  const daysRemaining = 12; // Example: 12 days left in billing cycle
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysRemaining = Math.max(1, daysInMonth - now.getDate());
   const rentDifference = selectedNewRoom ? selectedNewRoom.rent - currentRent : 0;
   const proratedDifference = selectedNewRoom ? Math.round((rentDifference / daysInMonth) * daysRemaining) : 0;
 
+  const handleCloseTransferModal = () => {
+    setShowTransferModal(false);
+    setTransferStep(1);
+    setSelectedNewRoom(null);
+  };
+
   const handleTransferComplete = async () => {
+    if (!targetId || !selectedNewRoom) return;
     setTransferring(true);
     try {
-      if (!targetId) return;
       const response = await transferMember(targetId, selectedNewRoom.id);
       if (response.status === 200 && response.data?.success) {
         setTransferStep(3);
         setTimeout(() => {
-          setShowTransferModal(false);
-          setTransferStep(1);
-          setSelectedNewRoom(null);
+          handleCloseTransferModal();
           fetchMember(); // Refresh member profile
-        }, 2000);
+        }, 1800);
       } else {
-        Alert.alert('Error', response.data?.message || 'Transfer failed');
+        Alert.alert('Transfer Failed', response.data?.message || 'Transfer failed');
       }
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Something went wrong');
+      const errMsg = error?.response?.data?.message || error?.message || 'Something went wrong';
+      Alert.alert('Transfer Failed', errMsg);
     } finally {
       setTransferring(false);
+    }
+  };
+
+  const handleCall = (numberOverride?: string) => {
+    const phoneNumber = numberOverride || member?.phone || member?.mobile;
+    if (phoneNumber) {
+      Linking.openURL(`tel:${phoneNumber}`);
+    } else {
+      Alert.alert('Phone Unavailable', 'No phone number available for this member.');
+    }
+  };
+
+  const handleMessage = (numberOverride?: string) => {
+    const phoneNumber = numberOverride || member?.phone || member?.mobile;
+    if (phoneNumber) {
+      Linking.openURL(`sms:${phoneNumber}`);
+    } else {
+      Alert.alert('Phone Unavailable', 'No phone number available for this member.');
     }
   };
 
@@ -218,7 +349,11 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
               <View style={styles.profileCard}>
                 <View style={styles.profileHeader}>
                   <View style={styles.avatarContainer}>
-                    <Text style={styles.avatarText}>{getInitials(member.name)}</Text>
+                    {member.photoUri ? (
+                      <Image source={{ uri: member.photoUri }} style={styles.avatarImage} />
+                    ) : (
+                      <Text style={styles.avatarText}>{getInitials(member.name)}</Text>
+                    )}
                     <View style={[styles.statusIndicator, { backgroundColor: colors.success }]} />
                   </View>
                   <View style={styles.profileInfo}>
@@ -236,11 +371,17 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
                 </View>
 
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity style={styles.actionBtn} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    activeOpacity={0.8}
+                    onPress={() => handleCall()}>
                     <Phone color="#FFFFFF" size={18} strokeWidth={2.5} />
                     <Text style={styles.actionBtnText}>Call</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnOutline]} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.actionBtnOutline]}
+                    activeOpacity={0.8}
+                    onPress={() => handleMessage()}>
                     <MessageSquare color={colors.primary} size={18} strokeWidth={2.5} />
                     <Text style={[styles.actionBtnText, { color: colors.primary }]}>Message</Text>
                   </TouchableOpacity>
@@ -250,12 +391,12 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
               {/* Accommodation Details */}
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Accommodation</Text>
-                <TouchableOpacity
+                {/* <TouchableOpacity
                   style={styles.transferBtn}
                   activeOpacity={0.8}
                   onPress={() => setShowTransferModal(true)}>
                   <Text style={styles.transferBtnText}>Transfer Room</Text>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
               </View>
               <View style={styles.card}>
                 <View style={styles.infoRow}>
@@ -285,15 +426,65 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
                 <View style={styles.financeHeader}>
                   <View>
                     <Text style={styles.infoLabel}>Current Balance</Text>
-                    <Text style={styles.balanceValue}>₹{member.balance}</Text>
+                    <Text
+                      style={[
+                        styles.balanceValue,
+                        (member.balance === 0 || member.hasPaidCurrentMonth) && { color: colors.success },
+                      ]}>
+                      ₹{(member.balance ?? 0).toLocaleString('en-IN')}
+                    </Text>
                   </View>
-                  <TouchableOpacity
-                    style={styles.collectBtn}
-                    activeOpacity={0.8}
-                    onPress={() => navigation.navigate('FeesTab', { screen: 'CollectFee', params: { memberId: member.id } })}>
-                    <Text style={styles.collectBtnText}>Collect</Text>
-                  </TouchableOpacity>
+                  {member.balance === 0 || member.hasPaidCurrentMonth ? (
+                    <View style={[styles.collectBtn, { backgroundColor: colors.successBg, borderWidth: 1, borderColor: '#A7F3D0' }]}>
+                      <Text style={[styles.collectBtnText, { color: colors.success }]}>Paid ✓</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.collectBtn}
+                      activeOpacity={0.8}
+                      onPress={() => navigation.navigate('FeesTab', { screen: 'CollectFee', params: { memberId: member.id } })}>
+                      <Text style={styles.collectBtnText}>Collect</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+
+                <View style={styles.divider} />
+
+                {/* Monthly Rent */}
+                <View style={styles.infoRow}>
+                  <View style={[styles.infoIconBox, { backgroundColor: '#EFF6FF' }]}>
+                    <IndianRupee color="#2563EB" size={20} strokeWidth={2.5} />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Monthly Rent</Text>
+                    <Text style={styles.infoValue}>
+                      ₹{(member.rent || member.monthlyRent || (recentTransaction?.amount ?? 0)).toLocaleString('en-IN')}
+                      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}> / month</Text>
+                    </Text>
+                  </View>
+                  {(member.deposit > 0 || member.securityDeposit > 0) && (
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.infoLabel}>Security Deposit</Text>
+                      <Text style={[styles.infoValue, { fontSize: 15 }]}>
+                        ₹{(member.deposit || member.securityDeposit || 0).toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Mid-Month Join Badge */}
+                {member.isMidJoin && (
+                  <View style={styles.midJoinBanner}>
+                    <Text style={styles.midJoinBannerIcon}>📅</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.midJoinBannerTitle}>Mid-Month Join</Text>
+                      <Text style={styles.midJoinBannerSub}>
+                        1st month: ₹{(member.midJoinAmount ?? 0).toLocaleString('en-IN')} (prorated){'\n'}
+                        From next month: ₹{(member.rent ?? 0).toLocaleString('en-IN')} / month
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
                 <View style={styles.divider} />
 
@@ -308,7 +499,20 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
                     </View>
                     <View>
                       <Text style={styles.historyTitle}>Recent Payment</Text>
-                      <Text style={styles.historySubtitle}>₹5,000 • 12 Jun 2026</Text>
+                      {recentTransaction ? (
+                        <Text style={styles.historySubtitle}>
+                          ₹{(recentTransaction.amount ?? 0).toLocaleString('en-IN')} •{' '}
+                          {recentTransaction.date
+                            ? (isNaN(new Date(recentTransaction.date).getTime())
+                                ? recentTransaction.date
+                                : new Date(recentTransaction.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))
+                            : (recentTransaction.createdAt
+                                ? new Date(recentTransaction.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : 'Recent')}
+                        </Text>
+                      ) : (
+                        <Text style={styles.historySubtitle}>No payments yet</Text>
+                      )}
                     </View>
                   </View>
                   <ArrowLeft color={colors.textTertiary} size={20} style={{ transform: [{ rotate: '180deg' }] }} />
@@ -318,35 +522,67 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
               {/* Documents */}
               <Text style={styles.sectionTitle}>Documents</Text>
               <View style={styles.card}>
-                <TouchableOpacity style={styles.documentRow} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={styles.documentRow}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (member.aadharDoc) {
+                      Alert.alert('Aadhar Card Document', `File URI: ${member.aadharDoc}`);
+                    } else {
+                      Alert.alert('Document Missing', 'Aadhar card has not been uploaded yet.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Upload Now', onPress: () => navigation.navigate('EditStudent', { member }) }
+                      ]);
+                    }
+                  }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.m }}>
-                    <View style={[styles.infoIconBox, { backgroundColor: '#F1F5F9' }]}>
-                      <User color={colors.textSecondary} size={20} strokeWidth={2.5} />
+                    <View style={[styles.infoIconBox, { backgroundColor: member.aadharDoc ? '#ECFDF5' : '#F1F5F9' }]}>
+                      <User color={member.aadharDoc ? colors.success : colors.textSecondary} size={20} strokeWidth={2.5} />
                     </View>
                     <View>
                       <Text style={styles.documentTitle}>Aadhar Card</Text>
-                      <Text style={styles.documentSubtitle}>Verified • ID Proof</Text>
+                      <Text style={styles.documentSubtitle}>
+                        {member.aadharDoc ? 'Uploaded • ID Proof' : 'Not Uploaded'}
+                      </Text>
                     </View>
                   </View>
-                  <View style={[styles.statusBadge, { backgroundColor: colors.successBg }]}>
-                    <Text style={[styles.statusText, { color: colors.success }]}>View</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: member.aadharDoc ? colors.successBg : '#F1F5F9' }]}>
+                    <Text style={[styles.statusText, { color: member.aadharDoc ? colors.success : colors.textTertiary }]}>
+                      {member.aadharDoc ? 'View' : 'Pending'}
+                    </Text>
                   </View>
                 </TouchableOpacity>
 
                 <View style={styles.divider} />
 
-                <TouchableOpacity style={styles.documentRow} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={styles.documentRow}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (member.rentalDoc) {
+                      Alert.alert('Rental Agreement Document', `File URI: ${member.rentalDoc}`);
+                    } else {
+                      Alert.alert('Document Missing', 'Rental agreement has not been uploaded yet.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Upload Now', onPress: () => navigation.navigate('EditStudent', { member }) }
+                      ]);
+                    }
+                  }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.m }}>
-                    <View style={[styles.infoIconBox, { backgroundColor: '#F1F5F9' }]}>
-                      <FileText color={colors.textSecondary} size={20} strokeWidth={2.5} />
+                    <View style={[styles.infoIconBox, { backgroundColor: member.rentalDoc ? '#EDE9FE' : '#F1F5F9' }]}>
+                      <FileText color={member.rentalDoc ? '#8B5CF6' : colors.textSecondary} size={20} strokeWidth={2.5} />
                     </View>
                     <View>
                       <Text style={styles.documentTitle}>Rental Agreement</Text>
-                      <Text style={styles.documentSubtitle}>Signed • 10 Mar 2026</Text>
+                      <Text style={styles.documentSubtitle}>
+                        {member.rentalDoc ? 'Uploaded • Stay Contract' : 'Not Uploaded'}
+                      </Text>
                     </View>
                   </View>
-                  <View style={[styles.statusBadge, { backgroundColor: colors.successBg }]}>
-                    <Text style={[styles.statusText, { color: colors.success }]}>View</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: member.rentalDoc ? '#EDE9FE' : '#F1F5F9' }]}>
+                    <Text style={[styles.statusText, { color: member.rentalDoc ? '#8B5CF6' : colors.textTertiary }]}>
+                      {member.rentalDoc ? 'View' : 'Pending'}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               </View>
@@ -360,7 +596,7 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
             visible={showTransferModal}
             animationType="slide"
             transparent={true}
-            onRequestClose={() => setShowTransferModal(false)}>
+            onRequestClose={handleCloseTransferModal}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
 
@@ -372,7 +608,7 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
                     {transferStep === 3 && 'Transfer Complete'}
                   </Text>
                   {transferStep !== 3 && (
-                    <TouchableOpacity onPress={() => setShowTransferModal(false)}>
+                    <TouchableOpacity onPress={handleCloseTransferModal}>
                       <X color={colors.textSecondary} size={24} />
                     </TouchableOpacity>
                   )}
@@ -381,27 +617,58 @@ export default function StudentDetailsScreen({ navigation, route }: any) {
                 {/* Step 1: Select Room */}
                 {transferStep === 1 && (
                   <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-                    {availableRooms.map(room => (
-                      <TouchableOpacity
-                        key={room.id}
-                        style={[
-                          styles.roomSelectCard,
-                          selectedNewRoom?.id === room.id && styles.roomSelectCardActive
-                        ]}
-                        activeOpacity={0.7}
-                        onPress={() => setSelectedNewRoom(room)}>
-                        <View style={styles.roomSelectIcon}>
-                          <Home color={selectedNewRoom?.id === room.id ? colors.primary : colors.textSecondary} size={20} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.roomSelectTitle, selectedNewRoom?.id === room.id && { color: colors.primary }]}>
-                            Room {room.id}
-                          </Text>
-                          <Text style={styles.roomSelectSubtitle}>{room.type} • Floor {room.floor}</Text>
-                        </View>
-                        <Text style={styles.roomSelectRent}>₹{room.rent}/mo</Text>
-                      </TouchableOpacity>
-                    ))}
+                    {availableRooms.length === 0 ? (
+                      <View style={{ padding: spacing.xl, alignItems: 'center' }}>
+                        <Text style={{ color: colors.textSecondary, fontSize: 14 }}>No rooms found in hostel</Text>
+                      </View>
+                    ) : (
+                      availableRooms.map(room => {
+                        const isDisabled = room.isCurrent || room.isFull;
+                        return (
+                          <TouchableOpacity
+                            key={room.id}
+                            disabled={isDisabled}
+                            style={[
+                              styles.roomSelectCard,
+                              selectedNewRoom?.id === room.id && styles.roomSelectCardActive,
+                              isDisabled && styles.roomSelectCardDisabled,
+                            ]}
+                            activeOpacity={0.7}
+                            onPress={() => setSelectedNewRoom(room)}>
+                            <View style={[styles.roomSelectIcon, isDisabled && { backgroundColor: '#F1F5F9' }]}>
+                              <Home color={selectedNewRoom?.id === room.id ? colors.primary : colors.textSecondary} size={20} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={[
+                                  styles.roomSelectTitle,
+                                  selectedNewRoom?.id === room.id && { color: colors.primary },
+                                  isDisabled && { color: colors.textTertiary }
+                                ]}>
+                                  Room {room.id}
+                                </Text>
+                                {room.isCurrent && (
+                                  <View style={styles.badgeCurrent}>
+                                    <Text style={styles.badgeCurrentText}>Current</Text>
+                                  </View>
+                                )}
+                                {room.isFull && (
+                                  <View style={styles.badgeFull}>
+                                    <Text style={styles.badgeFullText}>Full</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.roomSelectSubtitle}>
+                                {room.type} • Floor {room.floor} • {room.occupants}/{room.capacity} beds
+                              </Text>
+                            </View>
+                            <Text style={[styles.roomSelectRent, isDisabled && { color: colors.textTertiary }]}>
+                              ₹{room.rent}/mo
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
                   </ScrollView>
                 )}
 
@@ -567,6 +834,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: spacing.l,
     position: 'relative',
+  },
+  avatarImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
   },
   avatarText: {
     fontSize: 24,
@@ -815,6 +1087,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
   },
+  roomSelectCardDisabled: {
+    opacity: 0.55,
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  badgeCurrent: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: colors.primaryBg,
+  },
+  badgeCurrentText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  badgeFull: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+  },
+  badgeFullText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
   primaryBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 16,
@@ -920,6 +1219,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
-  }
+  },
+  midJoinBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.s,
+    backgroundColor: '#FFF7ED',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    padding: spacing.m,
+    marginVertical: spacing.s,
+  },
+  midJoinBannerIcon: {
+    fontSize: 20,
+    marginTop: 1,
+  },
+  midJoinBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#C2410C',
+    marginBottom: 2,
+  },
+  midJoinBannerSub: {
+    fontSize: 12,
+    color: '#9A3412',
+    lineHeight: 18,
+  },
 });
 

@@ -41,15 +41,29 @@ export default function CollectFeeScreen({ navigation, route }: any) {
       try {
         const response = await getMembers();
         if (response.status === 200 && response.data?.success) {
-          const activeMembers = (response.data.data || []).filter((m: any) => m.status === 'Active');
-          setMembersList(activeMembers);
+          const allMembers = response.data.data || [];
 
-          // If param is passed from PendingFeesScreen, pre-select
+          // Only include members who have pending fees for the current month
+          // (Exclude members who have already paid or have 0 computed balance)
+          const pendingMembers = allMembers.filter((m: any) => {
+            const hasPaid = m.hasPaidCurrentMonth === true || (m.computedBalance !== undefined && m.computedBalance === 0);
+            return !hasPaid;
+          });
+          setMembersList(pendingMembers);
+
+          // If param is passed from PendingFeesScreen or MemberDetails, pre-select
           if (route.params?.memberId) {
-            const found = activeMembers.find((m: any) => m._id === route.params.memberId);
+            const targetId = route.params.memberId;
+            const found = allMembers.find((m: any) => m._id === targetId || m.id === targetId);
             if (found) {
-              setSelectedMember(found);
-              setAmount(String(found.monthlyRent || ''));
+              const isPaid = found.hasPaidCurrentMonth === true || (found.computedBalance !== undefined && found.computedBalance === 0);
+              if (isPaid) {
+                Alert.alert('Fee Already Paid', `${found.name} has already paid the monthly fee for this month.`);
+              } else {
+                setSelectedMember(found);
+                const dueAmt = found.computedBalance !== undefined ? found.computedBalance : (found.monthlyRent ?? '');
+                setAmount(String(route.params?.amount ?? dueAmt ?? ''));
+              }
             }
           }
         }
@@ -65,27 +79,44 @@ export default function CollectFeeScreen({ navigation, route }: any) {
       Alert.alert('Error', 'Please select a member');
       return;
     }
-    if (!amount || isNaN(Number(amount))) {
+    const memberId = selectedMember._id || selectedMember.id;
+    if (!memberId) {
+      Alert.alert('Error', 'Selected member ID is missing');
+      return;
+    }
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       Alert.alert('Error', 'Please enter a valid amount');
       return;
     }
 
     setLoading(true);
     try {
-      const now = new Date();
-      const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      let paymentDate = new Date();
+      let currentMonthStr = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+      
+      if (date && date.includes('/')) {
+        const parts = date.split('/');
+        if (parts.length === 3) {
+          const parsed = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+          if (!isNaN(parsed.getTime())) {
+            paymentDate = parsed;
+            currentMonthStr = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+          }
+        }
+      }
       
       const payload = {
-        memberId: selectedMember._id,
+        memberId,
         amount: Number(amount),
         type: 'Monthly Fee',
         paymentMonth: currentMonthStr,
+        paymentDate,
         paymentMethod,
-        remarks,
+        remarks: remarks.trim() || undefined,
       };
 
       const response = await collectFee(payload);
-      if (response.status === 201 && response.data?.success) {
+      if ((response.status === 200 || response.status === 201) && response.data?.success) {
         Alert.alert('Success', 'Payment recorded successfully', [
           { text: 'OK', onPress: () => navigation.goBack() }
         ]);
@@ -93,7 +124,9 @@ export default function CollectFeeScreen({ navigation, route }: any) {
         Alert.alert('Error', response.data?.message || 'Failed to record payment');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.message || error.message || 'Something went wrong');
+      console.error('Fee collection error:', error);
+      const errMsg = error.response?.data?.message || error?.data?.message || error?.message || 'Something went wrong while recording payment';
+      Alert.alert('Error', errMsg);
     } finally {
       setLoading(false);
     }
@@ -344,7 +377,8 @@ export default function CollectFeeScreen({ navigation, route }: any) {
                       style={{ flex: 1 }}
                       onPress={() => {
                         setSelectedMember(item);
-                        setAmount(String(item.monthlyRent || ''));
+                        const dueAmt = item.computedBalance !== undefined ? item.computedBalance : (item.monthlyRent || '');
+                        setAmount(String(dueAmt));
                         setShowMemberModal(false);
                         setSearchQuery('');
                       }}
@@ -354,7 +388,9 @@ export default function CollectFeeScreen({ navigation, route }: any) {
                           <Text style={styles.memberName}>{item.name}</Text>
                           {isSelected && <Check color={colors.primary} size={18} strokeWidth={3} />}
                         </View>
-                        <Text style={styles.memberSub}>{`Room: ${item.room || 'Unassigned'} • Rent: ₹${item.monthlyRent || 0}`}</Text>
+                        <Text style={styles.memberSub}>
+                          {`Room: ${item.room || 'Unassigned'} • Due: ₹${(item.computedBalance ?? item.monthlyRent ?? 0).toLocaleString('en-IN')}`}
+                        </Text>
                       </View>
                     </TouchableOpacity>
 
@@ -377,7 +413,7 @@ export default function CollectFeeScreen({ navigation, route }: any) {
               }}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No active members found</Text>
+                  <Text style={styles.emptyText}>All members have paid their fees for this month 🎉</Text>
                 </View>
               }
             />

@@ -222,7 +222,16 @@ export default function PendingFeesScreen({ navigation }: any) {
             </View>
 
             <View style={styles.listContainer}>
-              {pendingStudents.slice(0, 3).map((student, idx) => {
+              {pendingStudents.length === 0 ? (
+                <View style={styles.emptyStateContainer}>
+                  <View style={styles.emptyIconCircle}>
+                    <Wallet color={colors.textTertiary} size={32} strokeWidth={1.5} />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Recent Dues</Text>
+                  <Text style={styles.emptySubtitle}>All fee collections & transactions will appear here.</Text>
+                </View>
+              ) : (
+                pendingStudents.slice(0, 3).map((student, idx) => {
                 const isPaid = student.status === 'Paid';
                 const dueVal = student.dueAmount ?? student.amount ?? 4500;
                 const formattedAmount = typeof dueVal === 'number' ? dueVal.toLocaleString('en-IN') : dueVal;
@@ -271,7 +280,8 @@ export default function PendingFeesScreen({ navigation }: any) {
                     </View>
                   </TouchableOpacity>
                 );
-              })}
+              })
+              )}
             </View>
           </View>
           
@@ -571,5 +581,34 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 12,
     fontWeight: '700',
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.m,
+  },
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.s,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

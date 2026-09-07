@@ -102,7 +102,7 @@ export default function StudentsListScreen({ navigation }: any) {
           room: m.room,
           status: m.computedStatus || m.status,
           joinDate: m.joiningDate || '-',
-          balance: m.computedBalance !== undefined ? m.computedBalance : (m.monthlyRent - (m.securityDeposit || 0)),
+          balance: m.computedBalance !== undefined ? m.computedBalance : (m.dueAmount ?? m.monthlyRent ?? m.monthlyFee ?? 0),
         }));
         setStudents(mappedStudents);
       }
@@ -414,7 +414,19 @@ export default function StudentsListScreen({ navigation }: any) {
           {/* Students List */}
           {loading 
             ? [1, 2, 3, 4, 5].map(k => renderSkeletonCard(k))
-            : sortedRooms.map(room => (
+            : filteredStudents.length === 0 ? (
+                <View style={styles.emptyStateContainer}>
+                  <View style={styles.emptyIconCircle}>
+                    <Users color={colors.textTertiary} size={36} strokeWidth={1.5} />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Members Found</Text>
+                  <Text style={styles.emptySubtitle}>
+                    {hasActiveFilters
+                      ? "No members match your search or filter criteria."
+                      : "You haven't registered any members yet. Tap '+' below to register your first student/member!"}
+                  </Text>
+                </View>
+              ) : sortedRooms.map(room => (
                 <View key={room} style={styles.roomGroupContainer}>
                   <View style={styles.roomHeaderContainer}>
                     <Text style={styles.roomHeaderText}>{room === 'Unassigned' ? room : `Room ${room}`}</Text>
@@ -925,5 +937,35 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl * 1.5,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.m,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 280,
   },
 });

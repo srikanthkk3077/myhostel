@@ -27,9 +27,14 @@ declare module "axios" {
 // BASE URL
 // ==============================
 
-const BASE_URL = "https://my-hostelbe.onrender.com/"
-// const BASE_URL = "http://localhost:3000/";
-// const BASE_URL = 'https://server.vydhyo.com/';
+// ─────────────────────────────────────────────────────────────
+// BASE_URL options (Backend port is 8000):
+// - Real Physical Device (Wi-Fi):   "http://192.168.29.106:8000/"
+// - Real Physical Device (USB ADB): "http://localhost:8000/" (run `adb reverse tcp:8000 tcp:8000`)
+// - Android Emulator:               "http://10.0.2.2:8000/"
+// - Production Cloud Server:        "https://my-hostelbe.onrender.com/"
+// ─────────────────────────────────────────────────────────────
+const BASE_URL = "http://192.168.29.106:8000/";
 
 // ==============================
 // AXIOS INSTANCE
@@ -128,7 +133,7 @@ const handleError = (err: any) => {
         typeof message === "string"
           ? message
           : message?.message ||
-            "Something went wrong",
+          "Something went wrong",
 
       status: "error",
     };

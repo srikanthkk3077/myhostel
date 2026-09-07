@@ -8,7 +8,7 @@ const lightColors = {
   text: '#111827',
   textSecondary: '#6B7280',
   textTertiary: '#9CA3AF',
-  border: '#F3F4F6',
+  border: '#d3d7deff',
   danger: '#EF4444',
   dangerBg: '#FEF2F2',
   warning: '#F59E0B',

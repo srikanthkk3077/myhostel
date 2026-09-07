@@ -1,34 +1,5 @@
-import {
-  mockGetMe,
-  mockUpdateProfile,
-  mockChangePassword,
-  mockGetMyPayments,
-  mockCreateRoom,
-  mockGetRooms,
-  mockUpdateRoom,
-  mockGetRoomById,
-  mockDeleteRoom,
-  mockGetMembers,
-  mockRegisterMember,
-  mockGetMemberById,
-  mockUpdateMember,
-  mockDeleteMember,
-  mockTransferMember,
-  mockGetUnassignedMembers,
-  mockAssignMember,
-  mockGetDashboardStats,
-  mockCollectFee,
-  mockGetFeeHistory,
-  mockGetFeeStats,
-  mockGetFeeById,
-  mockGetMemberTransactions,
-  mockGetExpenses,
-  mockAddExpense,
-  mockGetExpenseById,
-  mockDeleteExpense,
-  mockPayFee,
-  mockGetUserDashboard,
-} from './dummyData';
+import { ENDPOINTS } from './endpoints';
+import server from './index';
 
 export interface ICreateRoomBody {
   roomNumber: string;
@@ -41,10 +12,14 @@ export interface ICreateRoomBody {
 // ── PROFILE ────────────────────────────────────────────────────
 
 /** Get current authenticated user profile */
-export const getMe = () => mockGetMe();
+export const getMe = () => {
+  return server.get(ENDPOINTS.ME, { requiresAuth: true });
+};
 
 /** Get user dashboard stats (room, roommate, dues) */
-export const getUserDashboard = () => mockGetUserDashboard();
+export const getUserDashboard = () => {
+  return server.get(ENDPOINTS.USER_DASHBOARD, { requiresAuth: true });
+};
 
 /** Update current user profile details */
 export const updateProfile = (data: {
@@ -55,65 +30,95 @@ export const updateProfile = (data: {
   password?: string;
   hostelName?: string;
   hostelAddress?: string;
-}) => mockUpdateProfile(data);
+}) => {
+  return server.put(ENDPOINTS.UPDATE_PROFILE, data, { requiresAuth: true });
+};
 
 /** Change current user password */
-export const changePassword = (data: { currentPassword?: string; newPassword?: string }) =>
-  mockChangePassword(data);
+export const changePassword = (data: { currentPassword?: string; newPassword?: string }) => {
+  return server.put(ENDPOINTS.CHANGE_PASSWORD, data, { requiresAuth: true });
+};
 
 /** Get personal payments and transactions for logged-in user */
-export const getMyPayments = () => mockGetMyPayments();
+export const getMyPayments = () => {
+  return server.get(ENDPOINTS.MY_PAYMENTS, { requiresAuth: true });
+};
 
 // ── ROOMS ─────────────────────────────────────────────────────
 
 /** Create a new room */
-export const createRoom = (data: ICreateRoomBody) => mockCreateRoom(data);
+export const createRoom = (data: ICreateRoomBody) => {
+  return server.post(ENDPOINTS.ROOMS, data, { requiresAuth: true });
+};
 
 /** Get all rooms */
-export const getRooms = () => mockGetRooms();
+export const getRooms = () => {
+  return server.get(ENDPOINTS.ROOMS, { requiresAuth: true });
+};
 
 /** Update an existing room */
-export const updateRoom = (roomId: string, data: Partial<ICreateRoomBody>) =>
-  mockUpdateRoom(roomId, data);
+export const updateRoom = (roomId: string, data: Partial<ICreateRoomBody>) => {
+  return server.put(`${ENDPOINTS.ROOMS}/${roomId}`, data, { requiresAuth: true });
+};
 
 /** Get a single room by ID */
-export const getRoomById = (roomId: string) => mockGetRoomById(roomId);
+export const getRoomById = (roomId: string) => {
+  return server.get(`${ENDPOINTS.ROOMS}/${roomId}`, { requiresAuth: true });
+};
 
 /** Delete a room */
-export const deleteRoom = (roomId: string) => mockDeleteRoom(roomId);
+export const deleteRoom = (roomId: string) => {
+  return server.delete(`${ENDPOINTS.ROOMS}/${roomId}`, { requiresAuth: true });
+};
 
 // ── MEMBERS ───────────────────────────────────────────────────
 
 /** Get all members */
-export const getMembers = () => mockGetMembers();
+export const getMembers = () => {
+  return server.get(ENDPOINTS.MEMBERS, { requiresAuth: true });
+};
 
 /** Register a new member */
-export const registerMember = (data: any) => mockRegisterMember(data);
+export const registerMember = (data: any) => {
+  return server.post(ENDPOINTS.REGISTER_MEMBER, data, { requiresAuth: true });
+};
 
 /** Get a single member by ID */
-export const getMemberById = (memberId: string) => mockGetMemberById(memberId);
+export const getMemberById = (memberId: string) => {
+  return server.get(`${ENDPOINTS.MEMBERS}/${memberId}`, { requiresAuth: true });
+};
 
 /** Update an existing member */
-export const updateMember = (memberId: string, data: any) => mockUpdateMember(memberId, data);
+export const updateMember = (memberId: string, data: any) => {
+  return server.put(`${ENDPOINTS.MEMBERS}/${memberId}`, data, { requiresAuth: true });
+};
 
 /** Delete a member */
-export const deleteMember = (memberId: string) => mockDeleteMember(memberId);
+export const deleteMember = (memberId: string) => {
+  return server.delete(`${ENDPOINTS.MEMBERS}/${memberId}`, { requiresAuth: true });
+};
 
 /** Transfer a member to a new room */
-export const transferMember = (memberId: string, newRoomNumber: string) =>
-  mockTransferMember(memberId, newRoomNumber);
+export const transferMember = (memberId: string, newRoomNumber: string) => {
+  return server.put(`${ENDPOINTS.MEMBERS}/${memberId}/transfer`, { newRoomNumber }, { requiresAuth: true });
+};
 
 /** Get all unassigned members */
-export const getUnassignedMembers = () => mockGetUnassignedMembers();
+export const getUnassignedMembers = () => {
+  return server.get(`${ENDPOINTS.MEMBERS}/unassigned`, { requiresAuth: true });
+};
 
 /** Assign a member to a room and bed */
-export const assignMember = (memberId: string, roomNumber: string, bed: string) =>
-  mockAssignMember(memberId, roomNumber, bed);
+export const assignMember = (memberId: string, roomNumber: string, bed: string) => {
+  return server.put(`${ENDPOINTS.MEMBERS}/${memberId}/assign`, { roomNumber, bed }, { requiresAuth: true });
+};
 
 // ── DASHBOARD ─────────────────────────────────────────────────
 
 /** Get aggregated dashboard statistics */
-export const getDashboardStats = () => mockGetDashboardStats();
+export const getDashboardStats = () => {
+  return server.get(ENDPOINTS.DASHBOARD, { requiresAuth: true });
+};
 
 // ── FEES ──────────────────────────────────────────────────────
 
@@ -125,28 +130,42 @@ export const collectFee = (data: {
   paymentMonth: string;
   paymentMethod: string;
   remarks?: string;
-}) => mockCollectFee(data);
+  paymentDate?: any;
+}) => {
+  return server.post(`${ENDPOINTS.FEES}/collect`, data, { requiresAuth: true });
+};
 
 /** Get fee transaction history */
-export const getFeeHistory = () => mockGetFeeHistory();
+export const getFeeHistory = () => {
+  return server.get(`${ENDPOINTS.FEES}/history`, { requiresAuth: true });
+};
 
 /** Get fee revenue stats */
-export const getFeeStats = () => mockGetFeeStats();
+export const getFeeStats = () => {
+  return server.get(`${ENDPOINTS.FEES}/stats`, { requiresAuth: true });
+};
 
 /** Get a single fee transaction by ID */
-export const getFeeById = (id: string) => mockGetFeeById(id);
+export const getFeeById = (id: string) => {
+  return server.get(`${ENDPOINTS.FEES}/${id}`, { requiresAuth: true });
+};
 
 /** Get all transactions for a specific member */
-export const getMemberTransactions = (memberId: string) => mockGetMemberTransactions(memberId);
+export const getMemberTransactions = (memberId: string) => {
+  return server.get(`${ENDPOINTS.MEMBER_TRANSACTIONS}/${memberId}`, { requiresAuth: true });
+};
 
 /** Make a student self-payment */
-export const payFee = (data: { amount: number; paymentMethod: string }) => mockPayFee(data);
+export const payFee = (data: { amount: number; paymentMethod: string }) => {
+  return server.post(ENDPOINTS.PAY_FEE, data, { requiresAuth: true });
+};
 
 // ── EXPENSES ──────────────────────────────────────────────────
 
 /** Get all expenses */
-export const getExpenses = (_params?: { month?: string; category?: string; all?: boolean }) =>
-  mockGetExpenses();
+export const getExpenses = (params?: { month?: string; category?: string; all?: boolean }) => {
+  return server.get(ENDPOINTS.EXPENSES, { params, requiresAuth: true });
+};
 
 /** Add a new expense */
 export const addExpense = (data: {
@@ -154,10 +173,16 @@ export const addExpense = (data: {
   amount: number;
   category: string;
   description?: string;
-}) => mockAddExpense(data);
+}) => {
+  return server.post(ENDPOINTS.EXPENSES, data, { requiresAuth: true });
+};
 
 /** Get a single expense by ID */
-export const getExpenseById = (id: string) => mockGetExpenseById(id);
+export const getExpenseById = (id: string) => {
+  return server.get(`${ENDPOINTS.EXPENSES}/${id}`, { requiresAuth: true });
+};
 
 /** Delete a specific expense */
-export const deleteExpense = (id: string) => mockDeleteExpense(id);
+export const deleteExpense = (id: string) => {
+  return server.delete(`${ENDPOINTS.EXPENSES}/${id}`, { requiresAuth: true });
+};

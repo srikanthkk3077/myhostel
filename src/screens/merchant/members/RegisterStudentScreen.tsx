@@ -15,6 +15,7 @@ import {
   Alert,
   Modal,
   Image,
+  Switch,
 } from 'react-native';
 import {
   User,
@@ -34,18 +35,21 @@ import {
   FileText,
   FileCheck,
   CheckCircle2,
+  CalendarClock,
 } from 'lucide-react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { colors, spacing } from '../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { registerMember, getRooms } from '../../../service/merchant';
 import { useFocusEffect } from '@react-navigation/native';
+import CustomCalendarModal from '../../../components/CustomCalendarModal';
 
 const { width } = Dimensions.get('window');
 
 export default function RegisterStudentScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(1);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   // Form State
   const [name, setName] = useState('');
@@ -143,6 +147,10 @@ export default function RegisterStudentScreen({ navigation }: any) {
 
   const [deposit, setDeposit] = useState('');
   const [monthlyFee, setMonthlyFee] = useState('');
+
+  // Mid-Month Join State
+  const [isMidJoin, setIsMidJoin] = useState(false);
+  const [midJoinAmount, setMidJoinAmount] = useState('');
   
   const [isLoading, setIsLoading] = useState(false);
   const [availableRooms, setAvailableRooms] = useState<any[]>([]);
@@ -186,9 +194,69 @@ export default function RegisterStudentScreen({ navigation }: any) {
     ]).start();
   }, []);
 
+  const validateStep = (currentStep: number): boolean => {
+    if (currentStep === 1) {
+      if (!name || !name.trim()) {
+        Alert.alert('Required Field', 'Please enter Full Name.');
+        return false;
+      }
+      if (!mobile || !mobile.trim()) {
+        Alert.alert('Required Field', 'Please enter Mobile Number.');
+        return false;
+      }
+      const cleanPhone = mobile.replace(/\D/g, '');
+      if (cleanPhone.length < 10) {
+        Alert.alert('Invalid Mobile Number', 'Please enter a valid 10-digit Mobile Number.');
+        return false;
+      }
+      if (!aadhar || !aadhar.trim()) {
+        Alert.alert('Required Field', 'Please enter Aadhar / ID Number.');
+        return false;
+      }
+      if (!aadharDoc || !aadharDoc.uri) {
+        Alert.alert('Required Field', 'Please upload Aadhar Card (Image or PDF).');
+        return false;
+      }
+      return true;
+    }
+
+    if (currentStep === 2) {
+      if (!joiningDate || !joiningDate.trim()) {
+        Alert.alert('Required Field', 'Please select a Joining Date.');
+        return false;
+      }
+      if (!room || !room.trim()) {
+        Alert.alert('Required Field', 'Please select a Room.');
+        return false;
+      }
+      if (!bed || !bed.trim()) {
+        Alert.alert('Required Field', 'Please assign a Bed.');
+        return false;
+      }
+      return true;
+    }
+
+    if (currentStep === 3) {
+      if (deposit === '' || deposit === undefined || deposit === null || !deposit.trim()) {
+        Alert.alert('Required Field', 'Please enter Security Deposit (enter 0 if none).');
+        return false;
+      }
+      if (!monthlyFee || monthlyFee.trim() === '' || Number(monthlyFee) <= 0) {
+        Alert.alert('Required Field', 'Please enter Monthly Rent.');
+        return false;
+      }
+      if (isMidJoin && (!midJoinAmount || midJoinAmount.trim() === '' || Number(midJoinAmount) <= 0)) {
+        Alert.alert('Required Field', 'Please enter First Month Prorated Amount for Mid-Month Join.');
+        return false;
+      }
+      return true;
+    }
+
+    return true;
+  };
+
   const submitForm = async () => {
-    if (!name || !mobile) {
-      Alert.alert('Error', 'Name, mobile, and room are required fields.');
+    if (!validateStep(1) || !validateStep(2) || !validateStep(3)) {
       return;
     }
 
@@ -205,6 +273,10 @@ export default function RegisterStudentScreen({ navigation }: any) {
         bed,
         deposit,
         monthlyFee,
+        securityDeposit: Number(deposit) || 0,
+        monthlyRent: Number(monthlyFee) || 0,
+        isMidJoin,
+        midJoinAmount: isMidJoin ? (Number(midJoinAmount) || 0) : 0,
         photoUri,
         aadharDoc: aadharDoc?.uri || null,
         rentalDoc: rentalDoc?.uri || null,
@@ -226,6 +298,7 @@ export default function RegisterStudentScreen({ navigation }: any) {
   };
 
   const nextStep = () => {
+    if (!validateStep(step)) return;
     if (step < 3) setStep(step + 1);
     else submitForm();
   };
@@ -276,9 +349,12 @@ export default function RegisterStudentScreen({ navigation }: any) {
     value: string,
     onChange: (v: string) => void,
     options: any = {},
+    isRequired: boolean = false,
   ) => (
     <View style={styles.fieldWrapper}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>
+        {label} {isRequired && <Text style={{ color: colors.danger }}>*</Text>}
+      </Text>
       <View style={styles.inputContainer}>
         <View style={styles.iconBox}>
           {React.createElement(icon, {
@@ -361,26 +437,28 @@ export default function RegisterStudentScreen({ navigation }: any) {
 
                   {renderInput('Full Name', User, 'e.g. John Doe', name, setName, {
                     autoCapitalize: 'words',
-                  })}
+                  }, true)}
                   {renderInput('Mobile Number', Phone, '+91 98765 43210', mobile, setMobile, {
                     keyboardType: 'phone-pad',
-                  })}
+                  }, true)}
                   {renderInput('Parent/Guardian Name', User, 'e.g. Richard Doe', parentName, setParentName, {
                     autoCapitalize: 'words',
-                  })}
+                  }, false)}
                   {renderInput('Parent Phone', Phone, '+91 98765 43210', parentPhone, setParentPhone, {
                     keyboardType: 'phone-pad',
-                  })}
+                  }, false)}
                   {renderInput('Aadhar / ID Number', CreditCard, 'e.g. 1234 5678 9012', aadhar, setAadhar, {
                     keyboardType: 'numeric',
-                  })}
+                  }, true)}
 
                   {/* Aadhar Card Document Upload Card */}
                   <View style={styles.docUploadCard}>
                     <View style={styles.docUploadHeader}>
                       <FileText color={colors.primary} size={20} strokeWidth={2.5} />
                       <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.docUploadTitle}>Aadhar Card / Govt ID</Text>
+                        <Text style={styles.docUploadTitle}>
+                          Aadhar Card / Govt ID <Text style={{ color: colors.danger }}>*</Text>
+                        </Text>
                         <Text style={styles.docUploadSub}>Upload Image (JPG/PNG) or PDF document</Text>
                       </View>
                       {aadharDoc && (
@@ -496,10 +574,27 @@ export default function RegisterStudentScreen({ navigation }: any) {
                     Assign a room and bed to the member
                   </Text>
 
-                  {renderInput('Joining Date', Calendar, 'DD/MM/YYYY', joiningDate, setJoiningDate)}
+                  <View style={styles.fieldWrapper}>
+                    <Text style={styles.label}>
+                      Joining Date <Text style={{ color: colors.danger }}>*</Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.inputContainer}
+                      activeOpacity={0.7}
+                      onPress={() => setShowCalendarModal(true)}>
+                      <View style={styles.iconBox}>
+                        <Calendar color={colors.primary} size={18} strokeWidth={2.2} />
+                      </View>
+                      <Text style={[styles.input, { color: joiningDate ? colors.text : colors.textTertiary, marginTop: Platform.OS === 'ios' ? 0 : 4 }]}>
+                        {joiningDate || 'Tap to select date (DD/MM/YYYY)'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                   
                   <View style={styles.fieldWrapper}>
-                    <Text style={styles.label}>Select Room</Text>
+                    <Text style={styles.label}>
+                      Select Room <Text style={{ color: colors.danger }}>*</Text>
+                    </Text>
                     <TouchableOpacity
                       style={styles.inputContainer}
                       activeOpacity={0.7}
@@ -512,7 +607,9 @@ export default function RegisterStudentScreen({ navigation }: any) {
                   </View>
 
                   <View style={styles.fieldWrapper}>
-                    <Text style={styles.label}>Assign Bed</Text>
+                    <Text style={styles.label}>
+                      Assign Bed <Text style={{ color: colors.danger }}>*</Text>
+                    </Text>
                     <TouchableOpacity
                       style={[styles.inputContainer, !room && { opacity: 0.5 }]}
                       activeOpacity={0.7}
@@ -536,10 +633,58 @@ export default function RegisterStudentScreen({ navigation }: any) {
 
                   {renderInput('Security Deposit', Wallet, 'e.g. 5000', deposit, setDeposit, {
                     keyboardType: 'numeric',
-                  })}
+                  }, true)}
                   {renderInput('Monthly Rent', Wallet, 'e.g. 12000', monthlyFee, setMonthlyFee, {
                     keyboardType: 'numeric',
-                  })}
+                  }, true)}
+
+                  {/* Mid-Month Join Toggle */}
+                  <View style={styles.midJoinCard}>
+                    <View style={styles.midJoinRow}>
+                      <View style={styles.midJoinIconBox}>
+                        <CalendarClock color={colors.primary} size={20} strokeWidth={2.2} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.midJoinTitle}>Mid-Month Join</Text>
+                        <Text style={styles.midJoinSubtitle}>
+                          Member joined mid-month? Set a prorated amount for this month only.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={isMidJoin}
+                        onValueChange={(v) => { setIsMidJoin(v); if (!v) setMidJoinAmount(''); }}
+                        trackColor={{ false: colors.border, true: colors.primaryBg }}
+                        thumbColor={isMidJoin ? colors.primary : '#f4f3f4'}
+                      />
+                    </View>
+
+                    {isMidJoin && (
+                      <View style={styles.midJoinAmountBox}>
+                        <Text style={styles.midJoinAmountLabel}>
+                          First Month Amount (₹) <Text style={{ color: colors.danger }}>*</Text>
+                        </Text>
+                        <Text style={styles.midJoinAmountHint}>
+                          Full rent: ₹{Number(monthlyFee || 0).toLocaleString('en-IN')} • Enter the prorated amount for partial days
+                        </Text>
+                        <View style={[styles.inputContainer, { marginTop: 8 }]}>
+                          <View style={styles.iconBox}>
+                            <Wallet color={colors.primary} size={18} strokeWidth={2.2} />
+                          </View>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="e.g. 2500"
+                            placeholderTextColor={colors.textTertiary}
+                            value={midJoinAmount}
+                            onChangeText={setMidJoinAmount}
+                            keyboardType="numeric"
+                          />
+                        </View>
+                        <Text style={styles.midJoinNote}>
+                          💡 From next month, full rent of ₹{Number(monthlyFee || 0).toLocaleString('en-IN')} will be due.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               )}
 
@@ -649,6 +794,19 @@ export default function RegisterStudentScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
+
+      {/* Joining Date Calendar Modal */}
+      <CustomCalendarModal
+        visible={showCalendarModal}
+        onClose={() => setShowCalendarModal(false)}
+        selectedDate={joiningDate}
+        onSelectDate={(newDateStr) => {
+          setJoiningDate(newDateStr);
+          setShowCalendarModal(false);
+        }}
+        title="Select Joining Date"
+        disableFutureDates={false}
+      />
 
     </View>
   );
@@ -1005,5 +1163,60 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: colors.success,
+  },
+  midJoinCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    overflow: 'hidden',
+    marginBottom: spacing.l,
+  },
+  midJoinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+    padding: spacing.m,
+  },
+  midJoinIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.primaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  midJoinTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  midJoinSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  midJoinAmountBox: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    padding: spacing.m,
+    backgroundColor: colors.surface,
+  },
+  midJoinAmountLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  midJoinAmountHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  midJoinNote: {
+    fontSize: 12,
+    color: colors.primary,
+    marginTop: spacing.s,
+    fontWeight: '500',
   },
 });

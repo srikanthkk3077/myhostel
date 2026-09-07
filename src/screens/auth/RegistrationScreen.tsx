@@ -13,6 +13,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  Modal,
   ActivityIndicator,
 } from 'react-native';
 import {
@@ -30,7 +31,12 @@ import {
   CheckCircle2,
   MapPin,
   FileUp,
+  Image as ImageIcon,
+  FileText,
+  X,
 } from 'lucide-react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+import DocumentPicker from 'react-native-document-picker';
 import { colors, spacing } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -47,11 +53,80 @@ export default function RegistrationScreen({ navigation }: any) {
   const [showPassword, setShowPassword] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [accountType, setAccountType] = useState<'User' | 'merchant'>('User');
+  const [accountType, setAccountType] = useState<'User' | 'merchant'>('merchant');
   const [hostelName, setHostelName] = useState('');
   const [hostelAddress, setHostelAddress] = useState('');
   const [addressProof, setAddressProof] = useState<string | null>(null);
+  const [addressProofFile, setAddressProofFile] = useState<any>(null);
+  const [showUploadOptions, setShowUploadOptions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const handlePickFromGallery = async () => {
+    setShowUploadOptions(false);
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        includeBase64: true,
+      });
+      if (result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const fileName = asset.fileName || 'address_proof_image.jpg';
+        const fileData = asset.base64 ? `data:${asset.type || 'image/jpeg'};base64,${asset.base64}` : asset.uri;
+        setAddressProofFile({
+          name: fileName,
+          uri: asset.uri,
+          type: asset.type || 'image/jpeg',
+          data: fileData,
+        });
+        setAddressProof(fileName);
+      }
+    } catch (error) {
+      console.log('Error picking image from gallery:', error);
+      Alert.alert('Error', 'Failed to pick image from gallery');
+    }
+  };
+
+  const handlePickDocument = async () => {
+    setShowUploadOptions(false);
+    try {
+      if (!DocumentPicker || typeof DocumentPicker.pick !== 'function') {
+        throw new Error('Native DocumentPicker module not found');
+      }
+      const res = await DocumentPicker.pick({
+        type: [DocumentPicker.types.pdf, DocumentPicker.types.images],
+      });
+      if (res && res.length > 0) {
+        const doc = res[0];
+        const fileName = doc.name || 'address_proof_document.pdf';
+        setAddressProofFile({
+          name: fileName,
+          uri: doc.uri,
+          type: doc.type || 'application/pdf',
+          data: doc.uri,
+        });
+        setAddressProof(fileName);
+      }
+    } catch (err: any) {
+      if (DocumentPicker && typeof DocumentPicker.isCancel === 'function' && DocumentPicker.isCancel(err)) {
+        return;
+      }
+      console.log('Error picking document:', err);
+      Alert.alert(
+        'Document Picker',
+        'Native PDF document picking requires re-running `npm run android` to compile native bindings. Would you like to select an image from Gallery instead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Use Gallery', onPress: handlePickFromGallery },
+        ]
+      );
+    }
+  };
+
+  const handleRemoveAddressProof = () => {
+    setAddressProof(null);
+    setAddressProofFile(null);
+  };
 
   const handleRegister = async () => {
     if (!name || !email || !phone || !password) {
@@ -74,7 +149,7 @@ export default function RegistrationScreen({ navigation }: any) {
         ...(accountType === 'merchant' && {
           hostelName,
           hostelAddress,
-          addressProof: addressProof || undefined,
+          addressProof: addressProofFile ? (addressProofFile.data || addressProofFile.uri || addressProof) : addressProof || undefined,
         })
       };
       
@@ -296,19 +371,20 @@ export default function RegistrationScreen({ navigation }: any) {
               {/* Role Toggle */}
               <View style={styles.roleToggleContainer}>
                 <TouchableOpacity
-                  style={[styles.roleButton, accountType === 'User' && styles.roleButtonActive]}
-                  activeOpacity={0.8}
-                  onPress={() => setAccountType('User')}>
-                  <User color={accountType === 'User' ? '#FFFFFF' : colors.textSecondary} size={18} strokeWidth={2.5} />
-                  <Text style={[styles.roleText, accountType === 'User' && styles.roleTextActive]}>User</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
                   style={[styles.roleButton, accountType === 'merchant' && styles.roleButtonActive]}
                   activeOpacity={0.8}
                   onPress={() => setAccountType('merchant')}>
                   <Building2 color={accountType === 'merchant' ? '#FFFFFF' : colors.textSecondary} size={18} strokeWidth={2.5} />
                   <Text style={[styles.roleText, accountType === 'merchant' && styles.roleTextActive]}>Hostel Owner</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.roleButton, accountType === 'User' && styles.roleButtonActive]}
+                  activeOpacity={0.8}
+                  onPress={() => setAccountType('User')}>
+                  <User color={accountType === 'User' ? '#FFFFFF' : colors.textSecondary} size={18} strokeWidth={2.5} />
+                  <Text style={[styles.roleText, accountType === 'User' && styles.roleTextActive]}>User</Text>
+                </TouchableOpacity>
+                
               </View>
 
               {renderInput('name', 'Full Name', User, 'John Doe', name, setName, {
@@ -336,9 +412,13 @@ export default function RegistrationScreen({ navigation }: any) {
                   <View style={styles.fieldWrapper}>
                     <Text style={styles.label}>Address Proof (Optional)</Text>
                     <TouchableOpacity 
-                      style={styles.uploadButton} 
+                      style={[styles.uploadButton, addressProof ? styles.uploadButtonActive : null]} 
                       activeOpacity={0.7}
-                      onPress={() => setAddressProof('document_uploaded.pdf')}>
+                      onPress={() => {
+                        if (!addressProof) {
+                          setShowUploadOptions(true);
+                        }
+                      }}>
                       <View style={styles.uploadIconBox}>
                         {addressProof ? (
                           <CheckCircle2 color={colors.success} size={20} strokeWidth={2.5} />
@@ -348,12 +428,19 @@ export default function RegistrationScreen({ navigation }: any) {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.uploadTitle}>
-                          {addressProof ? 'Document Uploaded' : 'Upload Document'}
+                          {addressProof ? 'Document Selected' : 'Upload Document'}
                         </Text>
-                        <Text style={styles.uploadSubtitle}>
-                          {addressProof ? 'address_proof.pdf' : 'PDF, JPG or PNG (max. 5MB)'}
+                        <Text style={styles.uploadSubtitle} numberOfLines={1}>
+                          {addressProof ? addressProof : 'PDF, JPG or PNG (Gallery or Document)'}
                         </Text>
                       </View>
+                      {addressProof ? (
+                        <TouchableOpacity 
+                          style={styles.removeFileBtn} 
+                          onPress={handleRemoveAddressProof}>
+                          <X color={colors.danger} size={18} strokeWidth={2.5} />
+                        </TouchableOpacity>
+                      ) : null}
                     </TouchableOpacity>
                   </View>
                 </>
@@ -474,7 +561,7 @@ export default function RegistrationScreen({ navigation }: any) {
 
             {/* Footer */}
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
+              <Text style={styles.footerText}>Existing owner or resident? </Text>
               <TouchableOpacity onPress={() => navigation.navigate('Login')}>
                 <Text style={styles.footerLink}>Sign In</Text>
               </TouchableOpacity>
@@ -490,6 +577,54 @@ export default function RegistrationScreen({ navigation }: any) {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Upload Source Selection Modal */}
+      <Modal
+        visible={showUploadOptions}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUploadOptions(false)}>
+        <Pressable 
+          style={styles.modalOverlay} 
+          onPress={() => setShowUploadOptions(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>Upload Address Proof</Text>
+            <Text style={styles.modalSubtitle}>Choose document source</Text>
+
+            <TouchableOpacity
+              style={styles.optionBtn}
+              activeOpacity={0.8}
+              onPress={handlePickFromGallery}>
+              <View style={[styles.optionIconBox, { backgroundColor: colors.primaryBg }]}>
+                <ImageIcon color={colors.primary} size={22} strokeWidth={2.2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.optionTitle}>Choose from Gallery</Text>
+                <Text style={styles.optionSubtitle}>Select image/photo (JPG, PNG)</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.optionBtn}
+              activeOpacity={0.8}
+              onPress={handlePickDocument}>
+              <View style={[styles.optionIconBox, { backgroundColor: colors.infoBg }]}>
+                <FileText color={colors.info} size={22} strokeWidth={2.2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.optionTitle}>Select PDF / File</Text>
+                <Text style={styles.optionSubtitle}>Browse files or PDF documents</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setShowUploadOptions(false)}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -930,5 +1065,82 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  uploadButtonActive: {
+    borderColor: colors.success,
+    backgroundColor: colors.successBg,
+  },
+  removeFileBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.dangerBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: spacing.xl,
+    paddingBottom: Platform.OS === 'ios' ? 40 : spacing.xl,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+  },
+  optionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.l,
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    marginBottom: spacing.m,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  optionIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.m,
+  },
+  optionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  optionSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  cancelBtn: {
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginTop: spacing.s,
+  },
+  cancelBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textSecondary,
   },
 });
